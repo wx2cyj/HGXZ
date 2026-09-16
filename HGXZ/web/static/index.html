@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HGXZ - 黄果下载</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f1117;--card:#1a1d27;--border:#2a2d3a;
+  --text:#e4e4e7;--text2:#9ca3af;--accent:#f59e0b;
+  --green:#22c55e;--red:#ef4444;--blue:#3b82f6;
+  --radius:10px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+
+.container{max-width:1200px;margin:0 auto;padding:16px}
+
+/* Header */
+header{background:var(--card);border-bottom:1px solid var(--border);padding:12px 0;position:sticky;top:0;z-index:100}
+header .container{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.logo{font-size:1.3em;font-weight:700;color:var(--accent)}
+.logo span{color:var(--text2);font-weight:400;font-size:.75em;margin-left:6px}
+.header-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Nav tabs */
+.tabs{display:flex;gap:4px;margin:16px 0 12px;border-bottom:1px solid var(--border);padding-bottom:0}
+.tab{padding:8px 16px;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;transition:.2s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* Buttons */
+.btn{padding:7px 16px;border:none;border-radius:6px;cursor:pointer;font-size:.875em;font-weight:500;transition:.2s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#000}
+.btn-primary:hover{background:#d97706}
+.btn-danger{background:var(--red);color:#fff}
+.btn-danger:hover{background:#dc2626}
+.btn-secondary{background:var(--border);color:var(--text)}
+.btn-secondary:hover{background:#3a3d4a}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* Stats cards */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center}
+.stat-card .value{font-size:1.8em;font-weight:700;line-height:1.2}
+.stat-card .label{font-size:.8em;color:var(--text2);margin-top:2px}
+.stat-card.green .value{color:var(--green)}
+.stat-card.red .value{color:var(--red)}
+.stat-card.blue .value{color:var(--blue)}
+.stat-card.amber .value{color:var(--accent)}
+
+/* Sync status bar */
+.sync-bar{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.sync-bar .status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+.sync-bar .status-dot.running{background:var(--accent);animation:pulse 1.2s infinite}
+.sync-bar .status-dot.idle{background:var(--green)}
+.sync-bar .status-dot.error{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Filters */
+.filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.filters select,.filters input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:6px;font-size:.875em}
+.filters input{min-width:180px}
+
+/* Album list */
+.album-list{display:grid;gap:10px}
+.album-item{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;cursor:pointer;transition:.2s;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+.album-item:hover{border-color:var(--accent);background:#1e2130}
+.album-title{font-weight:600;font-size:.95em;word-break:break-all}
+.album-meta{display:flex;gap:12px;font-size:.8em;color:var(--text2);margin-top:4px;flex-wrap:wrap}
+.album-progress{text-align:right;white-space:nowrap}
+.progress-bar{width:100px;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:6px}
+.progress-bar .fill{height:100%;background:var(--green);border-radius:3px;transition:width .3s}
+.progress-bar .fill.has-failed{background:linear-gradient(90deg,var(--green) var(--ok-pct),var(--red) var(--ok-pct))}
+
+/* Tags */
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.75em;font-weight:500}
+.tag-done{background:#16382a;color:var(--green)}
+.tag-failed{background:#3b1a1a;color:var(--red)}
+.tag-ongoing{background:#2a2510;color:var(--accent)}
+
+/* Detail panel */
+.detail-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.detail-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.detail-title{font-size:1.2em;font-weight:700}
+.back-btn{color:var(--text2);cursor:pointer;font-size:.9em}
+.back-btn:hover{color:var(--accent)}
+.episode-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
+.ep-item{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border-radius:6px;font-size:.875em}
+.ep-item .ep-path{color:var(--text2);font-size:.75em;word-break:break-all;margin-top:2px}
+
+/* Log viewer */
+.log-box{background:#0a0b0f;border:1px solid var(--border);border-radius:var(--radius);padding:12px;height:400px;overflow-y:auto;font-family:"Fira Code",Consolas,monospace;font-size:.8em;line-height:1.7}
+.log-box .log-line{white-space:pre-wrap;word-break:break-all}
+.log-box .log-line.ERROR{color:var(--red)}
+.log-box .log-line.WARNING{color:var(--accent)}
+.log-box .log-line.INFO{color:var(--text2)}
+
+/* Page sections */
+.page{display:none}
+.page.active{display:block}
+
+/* Empty state */
+.empty{text-align:center;padding:40px 16px;color:var(--text2)}
+
+/* Mobile */
+@media(max-width:600px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .album-item{grid-template-columns:1fr}
+  .album-progress{text-align:left}
+  .progress-bar{width:100%}
+  .episode-grid{grid-template-columns:1fr}
+  .sync-bar{flex-direction:column;align-items:flex-start}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <div class="logo">🍊 HGXZ <span>黄果下载</span></div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" onclick="scanExisting()" id="btn-scan">📂 扫描已有</button>
+      <button class="btn btn-primary" onclick="triggerSync()" id="btn-sync">🔄 立即同步</button>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="tabs">
+    <div class="tab active" data-page="dashboard">仪表盘</div>
+    <div class="tab" data-page="albums">专辑列表</div>
+    <div class="tab" data-page="logs">同步日志</div>
+  </div>
+
+  <!-- Dashboard -->
+  <div class="page active" id="page-dashboard">
+    <div class="sync-bar" id="sync-bar">
+      <div>
+        <span class="status-dot idle" id="sync-dot"></span>
+        <span id="sync-text">就绪</span>
+      </div>
+      <span style="font-size:.8em;color:var(--text2)" id="last-sync">上次同步：-</span>
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <!-- Albums -->
+  <div class="page" id="page-albums">
+    <div class="filters">
+      <select id="filter-category"><option value="">全部分类</option></select>
+      <select id="filter-status">
+        <option value="">全部状态</option>
+        <option value="done">已完成</option>
+        <option value="downloading">下载中</option>
+        <option value="failed">有失败</option>
+      </select>
+      <input type="text" id="filter-search" placeholder="搜索标题…">
+      <button class="btn btn-danger" onclick="retryAllFailed()">🔁 重试全部失败</button>
+    </div>
+    <div id="album-list" class="album-list"></div>
+    <div id="album-detail" style="display:none"></div>
+  </div>
+
+  <!-- Logs -->
+  <div class="page" id="page-logs">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <span style="font-size:.9em;color:var(--text2)">实时日志（WebSocket）</span>
+      <span id="ws-status" style="font-size:.75em" class="tag tag-ongoing">连接中…</span>
+    </div>
+    <div class="log-box" id="log-box"></div>
+  </div>
+
+</div>
+
+<script>
+const API = '';
+let ws = null;
+let currentAlbumId = null;
+
+// ---- Tabs ----
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('page-' + tab.dataset.page).classList.add('active');
+    if (tab.dataset.page === 'albums') loadAlbums();
+    if (tab.dataset.page === 'logs') connectWS();
+    if (tab.dataset.page === 'dashboard') loadDashboard();
+  });
+});
+
+// ---- Dashboard ----
+async function loadDashboard() {
+  try {
+    const data = await fetch(API + '/api/dashboard').then(r => r.json());
+    const stats = document.getElementById('stats');
+    stats.innerHTML = `
+      <div class="stat-card blue"><div class="value">${data.albums}</div><div class="label">专辑总数</div></div>
+      <div class="stat-card"><div class="value">${data.total_episodes}</div><div class="label">总集数</div></div>
+      <div class="stat-card green"><div class="value">${data.done_episodes}</div><div class="label">已下载</div></div>
+      <div class="stat-card red"><div class="value">${data.failed_episodes}</div><div class="label">失败</div></div>
+    `;
+    updateSyncStatus(data.sync);
+    const sel = document.getElementById('filter-category');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">全部分类</option>';
+    (data.categories || []).forEach(c => {
+      sel.innerHTML += `<option value="${esc(c)}">${esc(c)}</option>`;
+    });
+    sel.value = cur;
+  } catch(e) { console.error(e); }
+}
+
+function updateSyncStatus(sync) {
+  const dot = document.getElementById('sync-dot');
+  const text = document.getElementById('sync-text');
+  const last = document.getElementById('last-sync');
+  dot.className = 'status-dot ' + (sync.running ? 'running' : sync.last_error ? 'error' : 'idle');
+  text.textContent = sync.running ? '同步中…' : sync.last_error ? '上次同步出错' : '就绪';
+  if (sync.last_sync) last.textContent = '上次同步：' + sync.last_sync;
+  document.getElementById('btn-sync').disabled = sync.running;
+  document.getElementById('btn-scan').disabled = sync.running;
+}
+
+// ---- Albums ----
+let debounceTimer = null;
+document.getElementById('filter-search').addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(loadAlbums, 300);
+});
+document.getElementById('filter-category').addEventListener('change', loadAlbums);
+document.getElementById('filter-status').addEventListener('change', loadAlbums);
+
+async function loadAlbums() {
+  if (currentAlbumId !== null) return;
+  const params = new URLSearchParams();
+  const cat = document.getElementById('filter-category').value;
+  const status = document.getElementById('filter-status').value;
+  const search = document.getElementById('filter-search').value.trim();
+  if (cat) params.set('category', cat);
+  if (status) params.set('status', status);
+  if (search) params.set('search', search);
+
+  try {
+    const data = await fetch(API + '/api/albums?' + params).then(r => r.json());
+    const list = document.getElementById('album-list');
+    if (!data.length) {
+      list.innerHTML = '<div class="empty">暂无数据</div>';
+      return;
+    }
+    list.innerHTML = data.map(a => {
+      const total = a.episode_count || 1;
+      const done = a.done_count || 0;
+      const failed = a.failed_count || 0;
+      const pct = Math.round(done / total * 100);
+      let statusTag = '';
+      if (failed > 0) statusTag = '<span class="tag tag-failed">有失败</span>';
+      else if (a.ended && done >= total) statusTag = '<span class="tag tag-done">已完成</span>';
+      else statusTag = '<span class="tag tag-ongoing">下载中</span>';
+      return `
+        <div class="album-item" onclick="showDetail(${a.id})">
+          <div>
+            <div class="album-title">${esc(a.title)}</div>
+            <div class="album-meta">
+              <span>${esc(a.category)}</span>
+              <span>${done}/${total} 集</span>
+              ${statusTag}
+            </div>
+          </div>
+          <div class="album-progress">
+            <span style="font-size:.85em;font-weight:600">${pct}%</span>
+            <div class="progress-bar">
+              <div class="fill${failed ? ' has-failed' : ''}"
+                   style="width:${pct}%;${failed ? '--ok-pct:' + Math.round((done - failed) / total * 100) + '%' : ''}"></div>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function showDetail(albumId) {
+  currentAlbumId = albumId;
+  document.getElementById('album-list').style.display = 'none';
+  document.querySelector('.filters').style.display = 'none';
+  const detail = document.getElementById('album-detail');
+  detail.style.display = 'block';
+
+  try {
+    const a = await fetch(API + '/api/albums/' + albumId).then(r => r.json());
+    const total = a.episode_count || 1;
+    const done = a.done_count || 0;
+    const episodes = a.episodes || [];
+    detail.innerHTML = `
+      <div class="detail-panel">
+        <div class="detail-header">
+          <div>
+            <div class="back-btn" onclick="backToList()">← 返回列表</div>
+            <div class="detail-title">${esc(a.title)}</div>
+            <div class="album-meta" style="margin-top:6px">
+              <span>${esc(a.category)}</span>
+              <span>${done}/${total} 集</span>
+              <span>${a.ended ? '已完结' : '连载中'}</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-danger" onclick="retryAlbum(${a.id})">🔁 重试失败</button>
+            <button class="btn btn-primary" onclick="syncAlbum(${a.id})">🔄 同步此专辑</button>
+          </div>
+        </div>
+        <div class="episode-grid">
+          ${episodes.length ? episodes.map(ep => {
+            const cls = ep.status === 'done' ? 'tag-done' : ep.status === 'failed' ? 'tag-failed' : 'tag-ongoing';
+            const label = ep.status === 'done' ? '已下载' : ep.status === 'failed' ? '失败' : '等待';
+            return `<div class="ep-item">
+              <div>
+                <div>第 ${ep.episode} 集 <span class="tag ${cls}">${label}</span></div>
+              </div>
+              <span style="font-size:.75em;color:var(--text2)">${ep.updated_at ? ep.updated_at.slice(0,19).replace('T',' ') : '-'}</span>
+            </div>`;
+          }).join('') : Array.from({length: total}, (_, i) => `
+            <div class="ep-item">
+              <div>第 ${i+1} 集 <span class="tag tag-ongoing">等待</span></div>
+              <span style="font-size:.75em;color:var(--text2)">-</span>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  } catch(e) { detail.innerHTML = '<div class="empty">加载失败</div>'; }
+}
+
+function backToList() {
+  currentAlbumId = null;
+  document.getElementById('album-detail').style.display = 'none';
+  document.getElementById('album-list').style.display = '';
+  document.querySelector('.filters').style.display = '';
+  loadAlbums();
+}
+
+// ---- Actions ----
+async function triggerSync() {
+  if (!confirm('确定立即开始全量同步？')) return;
+  await fetch(API + '/api/sync', {method:'POST'});
+  loadDashboard();
+}
+async function syncAlbum(id) {
+  await fetch(API + '/api/sync?album_id=' + id, {method:'POST'});
+  alert('同步已开始');
+  loadDashboard();
+}
+async function retryAlbum(id) {
+  const r = await fetch(API + '/api/retry-failed?album_id=' + id, {method:'POST'}).then(r=>r.json());
+  alert('已重置 ' + r.reset + ' 条失败记录');
+  showDetail(id);
+}
+async function retryAllFailed() {
+  if (!confirm('确定重置所有失败记录？下次同步将重新下载')) return;
+  const r = await fetch(API + '/api/retry-failed', {method:'POST'}).then(r=>r.json());
+  alert('已重置 ' + r.reset + ' 条失败记录');
+  loadAlbums();
+}
+async function scanExisting() {
+  if (!confirm('扫描媒体目录，将已有视频注册到状态库？')) return;
+  await fetch(API + '/api/scan-existing', {method:'POST'});
+  alert('扫描已开始，可在日志页查看进度');
+  loadDashboard();
+}
+
+// ---- Logs WebSocket ----
+function connectWS() {
+  if (ws && ws.readyState <= 1) return;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/ws/logs');
+  const badge = document.getElementById('ws-status');
+  ws.onopen = () => { badge.textContent = '已连接'; badge.className = 'tag tag-done'; };
+  ws.onclose = () => { badge.textContent = '已断开'; badge.className = 'tag tag-failed'; setTimeout(connectWS, 3000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    const entry = JSON.parse(e.data);
+    appendLog(entry);
+  };
+  loadInitialLogs();
+}
+async function loadInitialLogs() {
+  try {
+    const logs = await fetch(API + '/api/logs?n=200').then(r => r.json());
+    const box = document.getElementById('log-box');
+    box.innerHTML = '';
+    logs.forEach(appendLog);
+  } catch(e) {}
+}
+function appendLog(entry) {
+  const box = document.getElementById('log-box');
+  const div = document.createElement('div');
+  div.className = 'log-line ' + (entry.level || 'INFO');
+  div.textContent = entry.message;
+  box.appendChild(div);
+  if (box.children.length > 2000) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ---- Helpers ----
+function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+// ---- Polling sync status ----
+setInterval(async () => {
+  try {
+    const s = await fetch(API + '/api/sync-status').then(r => r.json());
+    updateSyncStatus(s);
+  } catch(e) {}
+}, 5000);
+
+// ---- Init ----
+loadDashboard();
+</script>
+</body>
+</html>
