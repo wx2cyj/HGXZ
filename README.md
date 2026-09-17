@@ -100,12 +100,14 @@ curl -sSL https://raw.githubusercontent.com/wx2cyj/HGXZ/main/config.example.json
 | **日志目录** | Path: /logs | `/mnt/user/appdata/HGXZ/logs` | 运行日志 |
 | **媒体目录** | Path: /media | `/mnt/user/QTZL/黄果` | 视频下载保存目录 |
 | **时区** | Variable: TZ | `Asia/Shanghai` | 确保定时时间准确 |
-| **运行参数** | Post Arguments | `--daemon` | 常驻后台运行（定时时间由 SCHEDULE 变量控制） |
+| **每日同步时间** | Variable: SCHEDULE | `03:30` | 每天自动同步时间（HH:MM 格式，默认凌晨 03:30） |
+| **文件权限掩码** | Variable: UMASK | `000` | 赋予生成文件完全读写权限，避免 Unraid SMB 权限问题 |
+| **运行参数** | Post Arguments | `--daemon` | 常驻后台运行 |
 
-> 🌐 **关于网络代理配置（可选）：**
-> 如果你的主站与视频 CDN 需要走代理，点击界面下方的 **【显示更多设置...】（Show more settings...）**：
-> - `HTTP_PROXY` / `HTTPS_PROXY`：填入你的代理地址（如 `http://192.168.2.6:10086`），不需要可留空。
-> - `NO_PROXY`：保持默认的 `127.0.0.1,localhost`（主站与视频均走代理）。
+> 🌐 **关于网络代理配置（必读）：**
+> 国内网络环境下 `huangguoai.com` 受限，**必须通过代理访问**，点击界面下方的 **【显示更多设置...】（Show more settings...）**：
+> - `HTTP_PROXY` / `HTTPS_PROXY`：填入你的局域网 HTTP 代理地址（例如 `http://192.168.2.6:10086`，注意填真实局域网 IP，不可填 `127.0.0.1`）。
+> - `NO_PROXY`：保持默认的 `127.0.0.1,localhost`。**切勿**将 `huangguoai.com` 加入直连白名单，否则会导致主站超时报错。
 
 5. 确认无误后，点击最下方的 **【应用】（Apply）** 按钮。Unraid 将自动拉取私有镜像并启动容器。
 
@@ -135,7 +137,12 @@ docker run -d --name HGXZ \
   -v /mnt/user/appdata/HGXZ/logs:/logs \
   -v /mnt/user/QTZL/黄果:/media \
   -e TZ=Asia/Shanghai \
-  wangxun2cyj1314/hgxz:latest --daemon --schedule 03:30
+  -e SCHEDULE=03:30 \
+  -e UMASK=000 \
+  -e HTTP_PROXY=http://192.168.2.6:10086 \
+  -e HTTPS_PROXY=http://192.168.2.6:10086 \
+  -e NO_PROXY=127.0.0.1,localhost \
+  wangxun2cyj1314/hgxz:latest
 ```
 
 ---
