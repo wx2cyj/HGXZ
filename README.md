@@ -31,26 +31,26 @@
 
 ## 一、Docker 镜像信息
 
-- **镜像地址**：`wangxun2cyj1314/hgxz:latest`
+- **镜像地址**：`ghcr.io/wx2cyj/hgxz:latest`
 - **平台架构**：`linux/amd64`
-- **拉取说明**：因为是 Docker Hub 私有镜像，拉取前需在宿主机/终端先完成一次登录认证：
+- **拉取说明**：因为是 GitHub 私有镜像库（GHCR），拉取前需在宿主机/终端先完成一次 GitHub 登录认证：
   ```bash
-  docker login
-  docker pull wangxun2cyj1314/hgxz:latest
+  docker login ghcr.io -u wx2cyj
+  docker pull ghcr.io/wx2cyj/hgxz:latest
   ```
 
 ---
 
 ## 二、Unraid 图形化配置部署指南
 
-### 第一步：在 Unraid 登录 Docker Hub（获取私有镜像拉取权限）
+### 第一步：在 Unraid 登录 GitHub 镜像库（获取私有镜像拉取权限）
 
-由于镜像存放在 Docker Hub 的**私有库**中，Unraid 首次拉取前必须先完成认证：
+由于镜像存放在 GitHub 的**私有镜像库（GHCR）**中，Unraid 首次拉取前必须先完成认证：
 
 1. 打开 Unraid 管理网页，点击右上角终端图标 **【`>_`】** 进入命令行。
-2. 执行登录命令并按提示输入用户名与密码（或 Token）：
+2. 执行登录命令并按提示输入用户名 `wx2cyj` 与 GitHub Token（PAT）：
    ```bash
-   docker login
+   docker login ghcr.io -u wx2cyj
    ```
 3. 看到 `Login Succeeded` 提示即表示认证成功。此登录状态在 Unraid 中持久保存。
 
@@ -93,7 +93,7 @@ curl -sSL https://raw.githubusercontent.com/wx2cyj/HGXZ/main/config.example.json
 | 设置项 | 字段名 | 填写内容 | 说明 |
 |--------|--------|----------|------|
 | **名称** | Name | `HGXZ` | 容器名称 |
-| **存储库** | Repository | `wangxun2cyj1314/hgxz:latest` | 你的私有镜像地址 |
+| **存储库** | Repository | `ghcr.io/wx2cyj/hgxz:latest` | 你的私有镜像地址 |
 | **WebUI 端口** | Port: 8099 | `8099` | Web 界面访问端口，可按需修改 |
 | **配置文件目录** | Path: /config | `/mnt/user/appdata/HGXZ/config` | 存放 config.json |
 | **状态库目录** | Path: /data | `/mnt/user/appdata/HGXZ/data` | SQLite 数据库文件 |
@@ -142,7 +142,7 @@ docker run -d --name HGXZ \
   -e HTTP_PROXY=http://192.168.2.6:10086 \
   -e HTTPS_PROXY=http://192.168.2.6:10086 \
   -e NO_PROXY=127.0.0.1,localhost \
-  wangxun2cyj1314/hgxz:latest
+  ghcr.io/wx2cyj/hgxz:latest
 ```
 
 ---
