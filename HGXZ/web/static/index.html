@@ -256,7 +256,9 @@ async function loadAlbums() {
       const total = a.episode_count || 1;
       const done = a.done_count || 0;
       const failed = a.failed_count || 0;
-      const pct = Math.round(done / total * 100);
+      const donePct = Math.round(done / total * 100);
+      const barPct = Math.round((done + failed) / total * 100);
+      const greenInBar = done + failed > 0 ? Math.round(done / (done + failed) * 100) : 100;
       let statusTag = '';
       if (failed > 0) statusTag = '<span class="tag tag-failed">有失败</span>';
       else if (a.ended && done >= total) statusTag = '<span class="tag tag-done">已完成</span>';
@@ -272,10 +274,10 @@ async function loadAlbums() {
             </div>
           </div>
           <div class="album-progress">
-            <span style="font-size:.85em;font-weight:600">${pct}%</span>
+            <span style="font-size:.85em;font-weight:600">${donePct}%</span>
             <div class="progress-bar">
               <div class="fill${failed ? ' has-failed' : ''}"
-                   style="width:${pct}%;${failed ? '--ok-pct:' + Math.round((done - failed) / total * 100) + '%' : ''}"></div>
+                   style="width:${barPct}%;${failed ? '--ok-pct:' + greenInBar + '%' : ''}"></div>
             </div>
           </div>
         </div>`;

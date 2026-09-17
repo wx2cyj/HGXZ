@@ -117,10 +117,12 @@ def create_app() -> FastAPI:
             _sync_status['last_error'] = None
             try:
                 from ..scanner import scan_existing
+                from datetime import datetime
                 archiver = _archiver_ref[0]
                 result = scan_existing(archiver.root, archiver.state,
                                        archiver.minimum_duration)
                 LOG.info('scan existing result: %s', result)
+                _sync_status['last_sync'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             except Exception as exc:
                 _sync_status['last_error'] = str(exc)
                 LOG.exception('scan existing failed: %s', exc)
