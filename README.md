@@ -4,115 +4,237 @@
 
 支持增量同步、失败重试、已有视频扫描识别，SQLite 记录下载状态。生成 Emby / Jellyfin 兼容的目录结构与 NFO 元数据。
 
+---
+
 ## 功能特点
 
 - **自动发现与下载** — 遍历分类页面，自动发现新专辑并下载全部剧集
-- **HLS 逐段下载** — 不依赖长连接，避免 CDN 断流；支持 AES-128 加密流解密
-- **增量同步** — 已下载的跳过，失败的有冷却期后自动重试
-- **Emby 兼容** — 自动创建 `tvshow.nfo`、`episodedetails.nfo`、`poster.jpg`
-- **多域名故障切换** — 主站不可用时自动切换备用域名，恢复后自动回切
-- **WebUI 管理** — 仪表盘统计、专辑浏览、实时日志（WebSocket）、手动同步/重试
-- **Docker / Unraid** — 提供 Dockerfile 和 Unraid 社区模板
+- **HLS 逐段下载** — 独立短连接分段下载+自动重试，避免 CDN 长连接断流；支持 AES-128 流解密
+- **增量同步** — 已下载完成的自动跳过，失败集进入冷却期后定时重试
+- **Emby 兼容** — 自动创建 `tvshow.nfo`、`episodedetails.nfo` 和 `poster.jpg`，智能跳过无变化重写
+- **多域名故障切换** — 主站异常时自动无缝切换备用域名，恢复后自动切回
+- **WebUI 管理** — 仪表盘统计、专辑列表、实时日志（WebSocket 流式推送）、手动一键同步/重试/扫描
+- **CI/CD 自动化** — GitHub Actions 自动构建 Docker 镜像并推送至 Docker Hub 私有仓库
+- **Unraid 专属支持** — 提供现成的 Unraid Docker 图形化安装模板
 
-## 快速开始
+---
 
-### Docker 部署（推荐）
+## 目录与路径规划
 
-1. **构建镜像：**
+| 用途 | 容器内路径 | Unraid 宿主机路径 | 说明 |
+|------|------------|-------------------|------|
+| **配置文件** | `/config` | `/mnt/user/appdata/HGXZ/config` | 存放 `config.json` |
+| **状态库** | `/data` | `/mnt/user/appdata/HGXZ/data` | 存放 SQLite 状态数据库 `state.sqlite3` |
+| **运行日志** | `/logs` | `/mnt/user/appdata/HGXZ/logs` | 存放每日轮转日志 `hgxz.log` |
+| **视频媒体库** | `/media` | `/mnt/user/QTZL/黄果` | 下载好的短剧视频与 NFO 元数据 |
+
+---
+
+## 一、GitHub Actions 自动构建私有镜像
+
+本项目已配置 GitHub Actions 自动构建工作流（`.github/workflows/docker-build.yml`）。每当你向 `main` 分支提交代码时，GitHub 会自动编译 Docker 镜像并推送到你的 Docker Hub 私有仓库。
+
+### 1. 配置 GitHub 仓库 Secrets
+
+在 GitHub 网页端打开本私有仓库：
+
+1. 点击仓库顶部的 **【Settings】（设置）**。
+2. 在左侧侧边栏中找到 **【Secrets and variables】** → 点击 **【Actions】**。
+3. 点击 **【New repository secret】** 按钮，分别添加以下两个 Secret：
+
+| Name（变量名） | Value（填写内容） |
+|----------------|-------------------|
+| `DOCKERHUB_USERNAME` | 你的 Docker Hub 登录用户名（例如 `wx2cyj`） |
+| `DOCKERHUB_TOKEN` | 你的 Docker Hub Personal Access Token（见下文生成方法） |
+
+> 🔑 **如何生成 Docker Hub Token：**
+> 1. 登录 [Docker Hub](https://hub.docker.com/)。
+> 2. 点击右上角头像 → 选择 **【Account settings】**。
+> 3. 点击左侧 **【Security】** → 点击 **【New Access Token】**。
+> 4. 权限选择 **Read & Write**，复制生成的 Token 粘贴到 GitHub 的 `DOCKERHUB_TOKEN` 中。
+
+### 2. 触发构建
+
+- **自动触发**：只要推送代码到 `main` 分支，GitHub Actions 就会自动启动构建。
+- **手动触发**：在 GitHub 仓库页面点击 **【Actions】** → 选择 **【Build and Push Docker Image】** → 点击 **【Run workflow】** 即可手动运行。
+
+构建完成后，私有镜像将位于：`你的DockerHub用户名/hgxz:latest`（例如 `wx2cyj/hgxz:latest`）。
+
+---
+
+## 二、Unraid 图形化配置部署指南
+
+### 第一步：在 Unraid 登录 Docker Hub（获取私有镜像拉取权限）
+
+由于镜像存放在 Docker Hub 的**私有库**中，Unraid 首次拉取前必须先完成认证：
+
+1. 打开 Unraid 管理网页，点击右上角终端图标 **【`>_`】** 进入命令行。
+2. 执行登录命令并按提示输入用户名与密码（或 Token）：
+   ```bash
+   docker login
+   ```
+3. 看到 `Login Succeeded` 提示即表示认证成功。此登录状态在 Unraid 中持久保存。
+
+---
+
+### 第二步：准备配置文件目录
+
+在 Unraid 终端中执行以下命令，快速创建目录并将模板配置文件就位：
 
 ```bash
-git clone https://github.com/wx2cyj/HGXZ.git
-cd HGXZ
-docker build -t hgxz:local .
+mkdir -p /mnt/user/appdata/HGXZ/config /mnt/user/appdata/HGXZ/data /mnt/user/appdata/HGXZ/logs /mnt/user/QTZL/黄果
 ```
 
-2. **准备配置文件：**
+将项目中的 `config.example.json` 复制到 `/mnt/user/appdata/HGXZ/config/config.json`：
 
 ```bash
-mkdir -p /path/to/appdata/hgxz/config
-cp config.example.json /path/to/appdata/hgxz/config/config.json
-# 按需修改 config.json
+curl -sSL https://raw.githubusercontent.com/wx2cyj/HGXZ/main/config.example.json -o /mnt/user/appdata/HGXZ/config/config.json
 ```
 
-3. **启动容器：**
+> 也可以通过 SMB 共享或 Unraid 文件管理器直接在 `/mnt/user/appdata/HGXZ/config/` 下创建并编辑 `config.json`。
+
+---
+
+### 第三步：添加 Unraid 容器模板
+
+1. 在 Unraid 终端中，将本项目的模板文件下载到 Unraid 用户模板目录：
+   ```bash
+   curl -sSL https://raw.githubusercontent.com/wx2cyj/HGXZ/main/unraid/hgxz.xml -o /boot/config/plugins/dockerMan/templates-user/my-hgxz.xml
+   ```
+
+---
+
+### 第四步：Unraid 网页端图形化安装
+
+1. 点击 Unraid 顶部导航栏的 **【Docker】** 标签页。
+2. 页面滚动到最底部，点击 **【添加容器】（Add Container）** 按钮。
+3. 在 **【模板】（Template）** 下拉菜单中，选择 **`HGXZ`**（系统会自动填充所有配置项）。
+4. 确认各项参数设置无误：
+
+| 设置项 | 字段名 | 填写内容 | 说明 |
+|--------|--------|----------|------|
+| **名称** | Name | `HGXZ` | 容器名称 |
+| **存储库** | Repository | `wx2cyj/hgxz:latest` | 你的私有镜像地址 |
+| **WebUI 端口** | Port: 8080 | `8080` | Web 界面访问端口，可按需修改 |
+| **配置文件目录** | Path: /config | `/mnt/user/appdata/HGXZ/config` | 存放 config.json |
+| **状态库目录** | Path: /data | `/mnt/user/appdata/HGXZ/data` | SQLite 数据库文件 |
+| **日志目录** | Path: /logs | `/mnt/user/appdata/HGXZ/logs` | 运行日志 |
+| **媒体目录** | Path: /media | `/mnt/user/QTZL/黄果` | 视频下载保存目录 |
+| **时区** | Variable: TZ | `Asia/Shanghai` | 确保定时时间准确 |
+| **运行参数** | Post Arguments | `--daemon --schedule 03:30` | 常驻后台运行，每天凌晨 03:30 同步 |
+
+> 🌐 **关于网络代理配置（可选）：**
+> 如果你的视频 CDN 下载需要走代理，点击界面下方的 **【显示更多设置...】（Show more settings...）**：
+> - `HTTP_PROXY` / `HTTPS_PROXY`：填入你的代理地址（如 `http://192.168.2.6:10086`），不需要可留空。
+> - `NO_PROXY`：保持默认的 `127.0.0.1,localhost,huangguoai.com,rxzfszht.cc`（主站域名直连，视频走代理）。
+
+5. 确认无误后，点击最下方的 **【应用】（Apply）** 按钮。Unraid 将自动拉取私有镜像并启动容器。
+
+---
+
+### 第五步：访问与验证
+
+1. 启动完成后，在 **【Docker】** 页面找到 `HGXZ` 容器，点击图标选择 **【查看日志】（Logs）**，确认看到 WebUI 启动日志。
+2. 点击容器图标选择 **【WebUI】**，或直接在浏览器访问：
+   ```
+   http://[你的Unraid主机IP]:8080
+   ```
+3. 进入界面后即可查看仪表盘、专辑列表与实时同步日志。
+
+---
+
+## 三、Docker CLI 命令行运行（备用）
+
+如果不使用 Unraid 模板，也可以直接在终端运行以下命令：
 
 ```bash
-docker run -d --name hgxz \
+docker run -d --name HGXZ \
   --restart unless-stopped \
   -p 8080:8080 \
-  -v /path/to/appdata/hgxz/config:/config \
-  -v /path/to/appdata/hgxz/data:/data \
-  -v /path/to/appdata/hgxz/logs:/logs \
-  -v /path/to/media:/media \
+  -v /mnt/user/appdata/HGXZ/config:/config \
+  -v /mnt/user/appdata/HGXZ/data:/data \
+  -v /mnt/user/appdata/HGXZ/logs:/logs \
+  -v /mnt/user/QTZL/黄果:/media \
   -e TZ=Asia/Shanghai \
-  hgxz:local --daemon --schedule 03:30
+  wx2cyj/hgxz:latest --daemon --schedule 03:30
 ```
 
-4. **打开 WebUI：** 浏览器访问 `http://你的IP:8080`
+---
 
-### Unraid 部署
+## 四、配置文件详细说明
 
-1. 在 Unraid 终端中构建镜像：
+配置文件路径：`/mnt/user/appdata/HGXZ/config/config.json`
 
-```bash
-cd /path/to/HGXZ && docker build -t hgxz:local .
+```json
+{
+  "site": {
+    "base_url": "https://huangguoai.com",
+    "backup_urls": [
+      "https://l5f9m.rxzfszht.cc",
+      "https://blolhh.rxzfszht.cc"
+    ],
+    "request_interval": 2,
+    "timeout": 30,
+    "categories": [
+      {
+        "name": "AI成人短剧",
+        "path": "/ai-duanju/",
+        "library": "AI成人短剧"
+      },
+      {
+        "name": "AI成人漫剧",
+        "path": "/ai-manju/",
+        "library": "AI成人漫剧"
+      }
+    ]
+  },
+  "download": {
+    "root": "/media",
+    "retries": 3,
+    "minimum_duration": 10,
+    "recheck_days": 7,
+    "failure_cooldown_hours": 24,
+    "episode_timeout": 1800
+  },
+  "state": {
+    "database": "/data/state.sqlite3"
+  },
+  "log": {
+    "directory": "/logs"
+  }
+}
 ```
 
-2. 将 `unraid/hgxz.xml` 复制到 `/boot/config/plugins/dockerMan/templates-user/`
-3. 在 Docker 页面点「添加容器」→ 选择模板 → 按需修改路径 → 启动
+| 参数项 | 说明 | 默认推荐值 |
+|--------|------|------------|
+| `site.base_url` | 主站根域名 | `https://huangguoai.com` |
+| `site.backup_urls` | 备用域名列表，主站故障时自动切换 | 见模板 |
+| `site.request_interval` | 请求间隔延迟（秒），防止被站点风控 | `2` |
+| `site.categories` | 抓取的短剧分类与对应生成的 Emby 媒体库目录名 | — |
+| `download.root` | 视频下载根目录（对应容器内 `/media`） | `/media` |
+| `download.retries` | 单集重试次数 | `3` |
+| `download.minimum_duration` | 视频最短有效时长（秒），过滤无效视频 | `10` |
+| `download.recheck_days` | 已完结专辑再次核查的间隔天数 | `7` |
+| `download.failure_cooldown_hours` | 失败集的冷却等待时间（小时），避免重复无效请求 | `24` |
+| `download.episode_timeout` | 单集下载总超时时间（秒） | `1800` |
+| `state.database` | SQLite 数据库文件路径 | `/data/state.sqlite3` |
+| `log.directory` | 日志存放路径（对应容器内 `/logs`） | `/logs` |
 
-## 配置说明
+---
 
-`config.json` 结构如下：
+## 五、Emby / Jellyfin 刮削结构
 
-| 配置项 | 说明 | 默认值 |
-|--------|------|--------|
-| `site.base_url` | 主站地址 | — |
-| `site.backup_urls` | 备用域名列表 | `[]` |
-| `site.request_interval` | 请求间隔（秒） | `2` |
-| `site.timeout` | 请求超时（秒） | `30` |
-| `site.categories` | 要下载的分类列表 | — |
-| `download.root` | 视频下载根目录 | `/media` |
-| `download.retries` | 每集下载重试次数 | `3` |
-| `download.minimum_duration` | 视频最短有效时长（秒） | `10` |
-| `download.recheck_days` | 已完成专辑的重检间隔（天） | `7` |
-| `download.failure_cooldown_hours` | 失败集冷却时间（小时） | `24` |
-| `download.episode_timeout` | 单集下载总超时（秒） | `1800` |
-| `state.database` | SQLite 数据库路径 | `/data/state.sqlite3` |
-| `log.directory` | 日志文件目录（可选） | — |
-
-## 命令行参数
+下载完成后的媒体库结构直接兼容 Emby 和 Jellyfin，无需额外刮削插件：
 
 ```
-python -m HGXZ.cli [OPTIONS]
-
-选项：
-  --config PATH           配置文件路径（默认 /config/config.json）
-  --daemon                常驻运行：启动后同步一次，之后每天定时同步，同时开启 WebUI
-  --schedule HH:MM        --daemon 模式下的每日同步时间（默认 03:30）
-  --port PORT             WebUI 端口（默认 8080）
-  --metadata-only         只生成 NFO 元数据，不下载视频
-  --only-id ID            只同步指定的专辑 ID
-  --max-albums N          最多同步 N 个专辑
-  --max-episodes N        每个专辑最多下载 N 集
-  --scan-existing         扫描媒体目录，将已有视频注册到状态库
-  --rebuild-covers        重新下载所有缺失的封面
-  --json                  输出 JSON 格式结果
-```
-
-## 目录结构
-
-下载后的媒体目录结构（Emby / Jellyfin 兼容）：
-
-```
-/media/
+/mnt/user/QTZL/黄果/
 ├── AI成人短剧/
 │   ├── 剧名A [huangguo-12345]/
-│   │   ├── tvshow.nfo
-│   │   ├── poster.jpg
+│   │   ├── tvshow.nfo           # 剧集元数据（标题/分类/标签/完结状态）
+│   │   ├── poster.jpg           # 剧集封面（自动解密）
 │   │   └── Season 01/
-│   │       ├── 剧名A.S01E01.mp4
-│   │       ├── 剧名A.S01E01.nfo
+│   │       ├── 剧名A.S01E01.mp4 # 视频文件
+│   │       ├── 剧名A.S01E01.nfo # 单集元数据
 │   │       ├── 剧名A.S01E02.mp4
 │   │       └── 剧名A.S01E02.nfo
 │   └── ...
@@ -120,28 +242,10 @@ python -m HGXZ.cli [OPTIONS]
     └── ...
 ```
 
-## 代理配置
+在 Emby 中将 `/mnt/user/QTZL/黄果` 添加为**节目（电视节目）**类型的媒体库即可直接识别展示。
 
-如果视频 CDN 需要代理访问，通过环境变量配置：
-
-```bash
--e HTTP_PROXY=http://192.168.2.6:10086
--e HTTPS_PROXY=http://192.168.2.6:10086
--e NO_PROXY=127.0.0.1,localhost,huangguoai.com,rxzfszht.cc
-```
-
-站点域名直连（`NO_PROXY`），视频 CDN 走代理。
-
-## 依赖
-
-- Python 3.13+
-- ffmpeg、ffprobe（视频合并与验证）
-- openssl（AES 解密）
-
-Python 包：
-- fastapi >= 0.115
-- uvicorn[standard] >= 0.30
+---
 
 ## 许可证
 
-私有项目，仅供个人使用。
+私有项目，仅供个人学习与自用。
