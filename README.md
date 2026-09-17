@@ -58,7 +58,7 @@
 - **自动触发**：只要推送代码到 `main` 分支，GitHub Actions 就会自动启动构建。
 - **手动触发**：在 GitHub 仓库页面点击 **【Actions】** → 选择 **【Build and Push Docker Image】** → 点击 **【Run workflow】** 即可手动运行。
 
-构建完成后，私有镜像将位于：`你的DockerHub用户名/hgxz:latest`（例如 `wx2cyj/hgxz:latest`）。
+构建完成后，私有镜像将位于：`wangxun2cyj1314/hgxz:latest`。
 
 ---
 
@@ -114,7 +114,7 @@ curl -sSL https://raw.githubusercontent.com/wx2cyj/HGXZ/main/config.example.json
 | 设置项 | 字段名 | 填写内容 | 说明 |
 |--------|--------|----------|------|
 | **名称** | Name | `HGXZ` | 容器名称 |
-| **存储库** | Repository | `wx2cyj/hgxz:latest` | 你的私有镜像地址 |
+| **存储库** | Repository | `wangxun2cyj1314/hgxz:latest` | 你的私有镜像地址 |
 | **WebUI 端口** | Port: 8080 | `8080` | Web 界面访问端口，可按需修改 |
 | **配置文件目录** | Path: /config | `/mnt/user/appdata/HGXZ/config` | 存放 config.json |
 | **状态库目录** | Path: /data | `/mnt/user/appdata/HGXZ/data` | SQLite 数据库文件 |
@@ -156,7 +156,7 @@ docker run -d --name HGXZ \
   -v /mnt/user/appdata/HGXZ/logs:/logs \
   -v /mnt/user/QTZL/黄果:/media \
   -e TZ=Asia/Shanghai \
-  wx2cyj/hgxz:latest --daemon --schedule 03:30
+  wangxun2cyj1314/hgxz:latest --daemon --schedule 03:30
 ```
 
 ---

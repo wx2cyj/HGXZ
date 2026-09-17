@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>HGXZ</Name>
-  <Repository>wx2cyj/hgxz:latest</Repository>
-  <Registry>https://hub.docker.com/r/wx2cyj/hgxz</Registry>
+  <Repository>wangxun2cyj1314/hgxz:latest</Repository>
+  <Registry>https://hub.docker.com/r/wangxun2cyj1314/hgxz</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
