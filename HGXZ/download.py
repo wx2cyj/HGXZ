@@ -147,6 +147,7 @@ def download_hls(url: str, destination: Path, referer: str, minimum_duration: fl
         segments = parsed['segments']
         if not segments:
             raise RuntimeError('playlist has no segments')
+        LOG.info('HLS playlist parsed: %d segments', len(segments))
         playlist_referer = f'{urlsplit(playlist_url).scheme}://{urlsplit(playlist_url).netloc}/'
         keys: dict[str, bytes] = {}
         workdir = Path(tempfile.mkdtemp(prefix='hls-'))
@@ -181,6 +182,9 @@ def download_hls(url: str, destination: Path, referer: str, minimum_duration: fl
                     seg_path = workdir / f'{index:05d}.ts'
                     seg_path.write_bytes(data)
                     fh.write(f"file '{seg_path}'\n")
+                    if (index + 1) % 10 == 0 or (index + 1) == len(segments):
+                        LOG.info('downloaded segments %d/%d', index + 1, len(segments))
+            LOG.info('merging %d segments with ffmpeg...', len(segments))
             cmd = [
                 'ffmpeg', '-hide_banner', '-loglevel', 'warning', '-xerror', '-y',
                 # Some sources ship segments whose DTS steps backwards at the

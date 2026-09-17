@@ -121,6 +121,9 @@ class Archiver:
         limit = album.episode_count if max_episodes is None else min(album.episode_count, max_episodes)
         done = 0
         failed_episodes: list[int] = []
+        pending = [n for n in range(1, limit + 1) if not self.state.episode_done(album.id, n)]
+        if pending and not metadata_only:
+            LOG.info('album=%s [%s] 开始同步: 待下载 %d/%d 集', album.id, album.title, len(pending), limit)
         for number in range(1, limit + 1):
             video = season_dir / build_episode_filename(album.title, number)
             nfo = video.with_suffix('.nfo')
@@ -152,14 +155,18 @@ class Archiver:
                     if age is not None and age.total_seconds() < self.failure_cooldown_hours * 3600:
                         LOG.info('album=%s ep=%s in cooldown, skipping', album.id, number)
                         continue
+            LOG.info('album=%s [%s] 第 %d/%d 集 开始下载...', album.id, album.title, number, limit)
             last = None
             for attempt in range(1, self.retries + 1):
                 try:
                     url = self.client.play_url(album.id, number)
-                    download_hls(url, video, self.client.base_url + '/',
-                                 self.minimum_duration, timeout=self.episode_timeout)
+                    info = download_hls(url, video, self.client.base_url + '/',
+                                        self.minimum_duration, timeout=self.episode_timeout)
                     self.state.mark_episode(album.id, number, str(video), 'done')
                     done += 1
+                    size_mb = (info.get('size', 0) or 0) / (1024 * 1024)
+                    LOG.info('album=%s [%s] 第 %d/%d 集 下载完成 (时长 %.0f秒, 大小 %.1fMB)',
+                             album.id, album.title, number, limit, info.get('duration', 0), size_mb)
                     break
                 except Exception as exc:
                     last = exc
@@ -178,6 +185,8 @@ class Archiver:
                 failed_episodes.append(number)
                 LOG.error('album=%s ep=%s giving up after %s attempts: %s',
                           album.id, number, self.retries, last)
+        if pending and done == limit and not metadata_only:
+            LOG.info('album=%s [%s] 全部 %d 集已下载完毕', album.id, album.title, limit)
         result = {'album': asdict(album), 'directory': str(album_dir),
                   'episodes_done': done, 'metadata_only': metadata_only}
         if failed_episodes:
