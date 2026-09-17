@@ -6,6 +6,7 @@ from pathlib import Path
 import argparse
 import json
 import logging
+import logging.handlers
 import threading
 import time
 import re
@@ -54,7 +55,7 @@ class Archiver:
                 ids = parse_category_html(html)
                 fresh = [i for i in ids if i not in category_ids]
                 category_ids.extend(fresh)
-                total_match = re.search(r'data-channel-panel=["\']latest["\'][^>]*data-panel-total=["\'](\\d+)', html)
+                total_match = re.search(r'data-channel-panel=["\']latest["\'][^>]*data-panel-total=["\'](\d+)', html)
                 total = int(total_match.group(1)) if total_match else len(category_ids)
                 if len(category_ids) >= total or not fresh:
                     break
@@ -164,10 +165,13 @@ class Archiver:
                 failed_episodes.append(number)
                 LOG.error('album=%s ep=%s giving up after %s attempts: %s',
                           album.id, number, self.retries, last)
+        result = {'album': asdict(album), 'directory': str(album_dir),
+                  'episodes_done': done, 'metadata_only': metadata_only}
         if failed_episodes:
-            raise RuntimeError(f'album={album.id} failed episodes: {failed_episodes}')
-        return {'album': asdict(album), 'directory': str(album_dir),
-                'episodes_done': done, 'metadata_only': metadata_only}
+            result['failed_episodes'] = failed_episodes
+            LOG.error('album=%s finished with %d failed episodes: %s',
+                      album.id, len(failed_episodes), failed_episodes)
+        return result
 
     def scan(self, *, metadata_only=False, only_id=None,
              max_albums=None, max_episodes=None):
@@ -188,9 +192,12 @@ class Archiver:
                 skipped_complete += 1
                 continue
             try:
-                results.append(self.sync_album(
+                result = self.sync_album(
                     album_id, category, metadata_only=metadata_only,
-                    max_episodes=max_episodes, force=force))
+                    max_episodes=max_episodes, force=force)
+                results.append(result)
+                if result.get('failed_episodes'):
+                    failures += 1
             except Exception as exc:
                 failures += 1
                 LOG.exception('sync album %s failed: %s', album_id, exc)
@@ -201,7 +208,7 @@ class Archiver:
 
 
 def load_config(path: Path) -> dict:
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding='utf-8'))
 
 
 def run_daemon(config: dict, schedule: str, web_port: int = 8080) -> int:
@@ -212,7 +219,18 @@ def run_daemon(config: dict, schedule: str, web_port: int = 8080) -> int:
     log_buf = LogBuffer()
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     log_buf.setFormatter(formatter)
-    logging.getLogger('HGXZ').addHandler(log_buf)
+    root_logger = logging.getLogger('HGXZ')
+    root_logger.addHandler(log_buf)
+
+    log_dir_str = config.get('log', {}).get('directory', '')
+    if log_dir_str:
+        log_dir = Path(log_dir_str)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.handlers.TimedRotatingFileHandler(
+            log_dir / 'hgxz.log', when='midnight', backupCount=30,
+            encoding='utf-8')
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
 
     archiver = Archiver(config)
     archiver_ref = [archiver]
@@ -243,8 +261,11 @@ def run_daemon(config: dict, schedule: str, web_port: int = 8080) -> int:
             target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
             if target <= now:
                 target += timedelta(days=1)
-            LOG.info('next sync at %s', target.strftime('%Y-%m-%d %H:%M:%S'))
-            while datetime.now() < target:
+            wait_seconds = (target - now).total_seconds()
+            LOG.info('next sync at %s (%.0f seconds from now)',
+                     target.strftime('%Y-%m-%d %H:%M:%S'), wait_seconds)
+            deadline = time.monotonic() + wait_seconds
+            while time.monotonic() < deadline:
                 time.sleep(30)
 
     sync_thread = threading.Thread(target=sync_loop, daemon=True, name='sync-daemon')

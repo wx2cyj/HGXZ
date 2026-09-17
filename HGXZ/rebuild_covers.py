@@ -6,7 +6,7 @@ import json
 import logging
 import re
 
-from .cover import valid_cover, write_decrypted_cover
+from .cover import valid_cover, write_cover
 from .site import HuangguoClient
 
 
@@ -31,7 +31,7 @@ def rebuild(root: Path, client: HuangguoClient) -> dict:
             url = client.cover_url(album_id)
             if not url:
                 raise RuntimeError('cover endpoint returned empty URL')
-            write_decrypted_cover(client.get_bytes(url), poster)
+            write_cover(client.get_bytes(url), poster)
             result['rebuilt'] += 1
             LOG.info('rebuilt album=%s dir=%s', album_id, album_dir.name)
         except Exception as exc:
@@ -44,7 +44,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default='/config/config.json')
     args = parser.parse_args()
-    config = json.loads(Path(args.config).read_text())
+    config = json.loads(Path(args.config).read_text(encoding='utf-8'))
     site = config['site']
     client = HuangguoClient(
         site['base_url'],
