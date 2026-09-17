@@ -14,7 +14,6 @@
 - **Emby 兼容** — 自动创建 `tvshow.nfo`、`episodedetails.nfo` 和 `poster.jpg`，智能跳过无变化重写
 - **多域名故障切换** — 主站异常时自动无缝切换备用域名，恢复后自动切回
 - **WebUI 管理** — 仪表盘统计、专辑列表、实时日志（WebSocket 流式推送）、手动一键同步/重试/扫描
-- **CI/CD 自动化** — GitHub Actions 自动构建 Docker 镜像并推送至 Docker Hub 私有仓库
 - **Unraid 专属支持** — 提供现成的 Unraid Docker 图形化安装模板
 
 ---
@@ -30,35 +29,15 @@
 
 ---
 
-## 一、GitHub Actions 自动构建私有镜像
+## 一、Docker 镜像信息
 
-本项目已配置 GitHub Actions 自动构建工作流（`.github/workflows/docker-build.yml`）。每当你向 `main` 分支提交代码时，GitHub 会自动编译 Docker 镜像并推送到你的 Docker Hub 私有仓库。
-
-### 1. 配置 GitHub 仓库 Secrets
-
-在 GitHub 网页端打开本私有仓库：
-
-1. 点击仓库顶部的 **【Settings】（设置）**。
-2. 在左侧侧边栏中找到 **【Secrets and variables】** → 点击 **【Actions】**。
-3. 点击 **【New repository secret】** 按钮，分别添加以下两个 Secret：
-
-| Name（变量名） | Value（填写内容） |
-|----------------|-------------------|
-| `DOCKERHUB_USERNAME` | 你的 Docker Hub 登录用户名（例如 `wx2cyj`） |
-| `DOCKERHUB_TOKEN` | 你的 Docker Hub Personal Access Token（见下文生成方法） |
-
-> 🔑 **如何生成 Docker Hub Token：**
-> 1. 登录 [Docker Hub](https://hub.docker.com/)。
-> 2. 点击右上角头像 → 选择 **【Account settings】**。
-> 3. 点击左侧 **【Security】** → 点击 **【New Access Token】**。
-> 4. 权限选择 **Read & Write**，复制生成的 Token 粘贴到 GitHub 的 `DOCKERHUB_TOKEN` 中。
-
-### 2. 触发构建
-
-- **自动触发**：只要推送代码到 `main` 分支，GitHub Actions 就会自动启动构建。
-- **手动触发**：在 GitHub 仓库页面点击 **【Actions】** → 选择 **【Build and Push Docker Image】** → 点击 **【Run workflow】** 即可手动运行。
-
-构建完成后，私有镜像将位于：`wangxun2cyj1314/hgxz:latest`。
+- **镜像地址**：`wangxun2cyj1314/hgxz:latest`
+- **平台架构**：`linux/amd64`
+- **拉取说明**：因为是 Docker Hub 私有镜像，拉取前需在宿主机/终端先完成一次登录认证：
+  ```bash
+  docker login
+  docker pull wangxun2cyj1314/hgxz:latest
+  ```
 
 ---
 
