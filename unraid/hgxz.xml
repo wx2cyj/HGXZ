@@ -30,7 +30,7 @@
   <Config Name="媒体目录" Target="/media" Default="/mnt/user/QTZL/黄果" Mode="rw" Description="视频下载目标目录" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/QTZL/黄果</Config>
   <Config Name="时区" Target="TZ" Default="Asia/Shanghai" Mode="" Description="容器时区" Type="Variable" Display="always" Required="true" Mask="false">Asia/Shanghai</Config>
   <Config Name="每日定时同步时间" Target="SCHEDULE" Default="03:30" Mode="" Description="每日自动同步时间，格式 HH:MM（默认凌晨 03:30）" Type="Variable" Display="always" Required="false" Mask="false">03:30</Config>
-  <Config Name="HTTP 代理" Target="HTTP_PROXY" Default="http://192.168.2.6:10086" Mode="" Description="视频 CDN 下载代理；不需要可留空" Type="Variable" Display="advanced" Required="false" Mask="false">http://192.168.2.6:10086</Config>
-  <Config Name="HTTPS 代理" Target="HTTPS_PROXY" Default="http://192.168.2.6:10086" Mode="" Description="同上" Type="Variable" Display="advanced" Required="false" Mask="false">http://192.168.2.6:10086</Config>
-  <Config Name="不走代理的地址" Target="NO_PROXY" Default="127.0.0.1,localhost,huangguoai.com,rxzfszht.cc" Mode="" Description="站点域名直连，视频 CDN 走代理" Type="Variable" Display="advanced" Required="false" Mask="false">127.0.0.1,localhost,huangguoai.com,rxzfszht.cc</Config>
+  <Config Name="HTTP 代理" Target="HTTP_PROXY" Default="" Mode="" Description="视频 CDN 下载代理；正常网络留空即可" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="HTTPS 代理" Target="HTTPS_PROXY" Default="" Mode="" Description="同上；正常网络留空即可" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="不走代理的地址" Target="NO_PROXY" Default="" Mode="" Description="不走代理的地址；留空即可" Type="Variable" Display="advanced" Required="false" Mask="false"/>
 </Container>
