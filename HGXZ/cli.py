@@ -211,7 +211,7 @@ def load_config(path: Path) -> dict:
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-def run_daemon(config: dict, schedule: str, web_port: int = 8080) -> int:
+def run_daemon(config: dict, schedule: str, web_port: int = 8099) -> int:
     from .web.app import create_app, set_shared_state
     from .web.log_handler import LogBuffer
     import uvicorn
@@ -292,8 +292,8 @@ def main() -> int:
                         help='常驻运行：启动后同步一次，之后每天定时同步，同时开启 WebUI')
     parser.add_argument('--schedule', default='03:30',
                         help='--daemon 模式下的每日同步时间 HH:MM')
-    parser.add_argument('--port', type=int, default=8080,
-                        help='WebUI 端口（默认 8080）')
+    parser.add_argument('--port', type=int, default=8099,
+                        help='WebUI 端口（默认 8099）')
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,

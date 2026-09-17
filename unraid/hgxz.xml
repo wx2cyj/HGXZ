@@ -11,7 +11,7 @@
   <Project/>
   <Overview>黄果下载（HGXZ）：自动下载黄果短剧视频到指定目录，带 WebUI 管理界面。支持增量同步、失败重试、已有视频扫描识别，SQLite 记录下载状态。容器常驻运行，启动后立即同步一次，之后每天定时自动同步。</Overview>
   <Category>Downloaders:</Category>
-  <WebUI>http://[IP]:[PORT:8080]</WebUI>
+  <WebUI>http://[IP]:[PORT:8099]</WebUI>
   <TemplateURL/>
   <Icon/>
   <ExtraParams>--restart unless-stopped</ExtraParams>
@@ -23,7 +23,7 @@
   <Requires>私有镜像部署说明：&#xD;
 1. 首次使用前，先在 Unraid 终端运行 docker login 登录你的 Docker Hub 账号以获取拉取权限。&#xD;
 2. 启动容器前，先将 config.example.json 复制为 config.json 并放到 /mnt/user/appdata/HGXZ/config/ 目录下。</Requires>
-  <Config Name="WebUI 端口" Target="8080" Default="8080" Mode="tcp" Description="WebUI 管理界面端口" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="WebUI 端口" Target="8099" Default="8099" Mode="tcp" Description="WebUI 管理界面端口" Type="Port" Display="always" Required="true" Mask="false">8099</Config>
   <Config Name="配置文件目录" Target="/config" Default="/mnt/user/appdata/HGXZ/config" Mode="rw" Description="存放 config.json 的目录" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/HGXZ/config</Config>
   <Config Name="状态库目录" Target="/data" Default="/mnt/user/appdata/HGXZ/data" Mode="rw" Description="SQLite 状态库存放目录" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/HGXZ/data</Config>
   <Config Name="日志目录" Target="/logs" Default="/mnt/user/appdata/HGXZ/logs" Mode="rw" Description="同步日志目录" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/HGXZ/logs</Config>

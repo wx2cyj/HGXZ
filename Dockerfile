@@ -6,5 +6,5 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 COPY HGXZ /app/HGXZ
 ENV PYTHONUNBUFFERED=1 TZ=Asia/Shanghai
-EXPOSE 8080
+EXPOSE 8099
 ENTRYPOINT ["python", "-m", "HGXZ.cli"]

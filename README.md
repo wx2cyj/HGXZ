@@ -115,7 +115,7 @@ curl -sSL https://raw.githubusercontent.com/wx2cyj/HGXZ/main/config.example.json
 |--------|--------|----------|------|
 | **名称** | Name | `HGXZ` | 容器名称 |
 | **存储库** | Repository | `wangxun2cyj1314/hgxz:latest` | 你的私有镜像地址 |
-| **WebUI 端口** | Port: 8080 | `8080` | Web 界面访问端口，可按需修改 |
+| **WebUI 端口** | Port: 8099 | `8099` | Web 界面访问端口，可按需修改 |
 | **配置文件目录** | Path: /config | `/mnt/user/appdata/HGXZ/config` | 存放 config.json |
 | **状态库目录** | Path: /data | `/mnt/user/appdata/HGXZ/data` | SQLite 数据库文件 |
 | **日志目录** | Path: /logs | `/mnt/user/appdata/HGXZ/logs` | 运行日志 |
@@ -137,7 +137,7 @@ curl -sSL https://raw.githubusercontent.com/wx2cyj/HGXZ/main/config.example.json
 1. 启动完成后，在 **【Docker】** 页面找到 `HGXZ` 容器，点击图标选择 **【查看日志】（Logs）**，确认看到 WebUI 启动日志。
 2. 点击容器图标选择 **【WebUI】**，或直接在浏览器访问：
    ```
-   http://[你的Unraid主机IP]:8080
+   http://[你的Unraid主机IP]:8099
    ```
 3. 进入界面后即可查看仪表盘、专辑列表与实时同步日志。
 
@@ -150,7 +150,7 @@ curl -sSL https://raw.githubusercontent.com/wx2cyj/HGXZ/main/config.example.json
 ```bash
 docker run -d --name HGXZ \
   --restart unless-stopped \
-  -p 8080:8080 \
+  -p 8099:8099 \
   -v /mnt/user/appdata/HGXZ/config:/config \
   -v /mnt/user/appdata/HGXZ/data:/data \
   -v /mnt/user/appdata/HGXZ/logs:/logs \
