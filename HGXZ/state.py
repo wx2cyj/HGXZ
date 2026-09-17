@@ -12,7 +12,7 @@ class StateDB:
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute('PRAGMA journal_mode=WAL')
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self.conn.executescript('''
         CREATE TABLE IF NOT EXISTS albums (
           id INTEGER PRIMARY KEY,
@@ -71,33 +71,38 @@ class StateDB:
             self.conn.commit()
 
     def episode_done(self, album_id: int, episode: int) -> bool:
-        row = self.conn.execute(
-            'SELECT status,path FROM episodes WHERE album_id=? AND episode=?',
-            (album_id, episode)).fetchone()
-        return bool(row and row['status'] == 'done' and Path(row['path']).exists())
+        with self._lock:
+            row = self.conn.execute(
+                'SELECT status,path FROM episodes WHERE album_id=? AND episode=?',
+                (album_id, episode)).fetchone()
+            return bool(row and row['status'] == 'done' and Path(row['path']).exists())
 
     def episode_failed_at(self, album_id: int, episode: int) -> str | None:
-        row = self.conn.execute(
-            'SELECT status,updated_at FROM episodes WHERE album_id=? AND episode=?',
-            (album_id, episode)).fetchone()
-        return row['updated_at'] if row and row['status'] == 'failed' else None
+        with self._lock:
+            row = self.conn.execute(
+                'SELECT status,updated_at FROM episodes WHERE album_id=? AND episode=?',
+                (album_id, episode)).fetchone()
+            return row['updated_at'] if row and row['status'] == 'failed' else None
 
     def album_row(self, album_id: int) -> sqlite3.Row | None:
-        return self.conn.execute('SELECT * FROM albums WHERE id=?', (album_id,)).fetchone()
+        with self._lock:
+            return self.conn.execute('SELECT * FROM albums WHERE id=?', (album_id,)).fetchone()
 
     def album_is_complete(self, album_id: int, episode_count: int) -> bool:
-        rows = self.conn.execute(
-            'SELECT episode,path,status FROM episodes WHERE album_id=?',
-            (album_id,)).fetchall()
-        done = {row['episode']: row['path'] for row in rows if row['status'] == 'done'}
-        if episode_count < 1 or len(done) < episode_count:
-            return False
-        return all(number in done and Path(done[number]).exists()
-                   for number in range(1, episode_count + 1))
+        with self._lock:
+            rows = self.conn.execute(
+                'SELECT episode,path,status FROM episodes WHERE album_id=?',
+                (album_id,)).fetchall()
+            done = {row['episode']: row['path'] for row in rows if row['status'] == 'done'}
+            if episode_count < 1 or len(done) < episode_count:
+                return False
+            return all(number in done and Path(done[number]).exists()
+                       for number in range(1, episode_count + 1))
 
     def unfinished_albums(self) -> list[dict]:
-        return [dict(x) for x in self.conn.execute(
-            'SELECT * FROM albums WHERE ended=0 ORDER BY id')]
+        with self._lock:
+            return [dict(x) for x in self.conn.execute(
+                'SELECT * FROM albums WHERE ended=0 ORDER BY id')]
 
     # ---- WebUI query methods ----
 
@@ -132,41 +137,44 @@ class StateDB:
         elif status == 'downloading':
             query += ' AND (a.ended = 0 OR COALESCE(e.done_count, 0) < a.episode_count)'
         query += ' ORDER BY a.last_checked_at DESC'
-        return [dict(row) for row in self.conn.execute(query, params)]
+        with self._lock:
+            return [dict(row) for row in self.conn.execute(query, params)]
 
     def album_with_episodes(self, album_id: int) -> dict | None:
-        album = self.album_row(album_id)
-        if not album:
-            return None
-        result = dict(album)
-        episodes = self.conn.execute(
-            'SELECT episode, path, status, updated_at '
-            'FROM episodes WHERE album_id=? ORDER BY episode',
-            (album_id,)).fetchall()
-        result['episodes'] = [dict(e) for e in episodes]
-        done = sum(1 for e in episodes if e['status'] == 'done')
-        failed = sum(1 for e in episodes if e['status'] == 'failed')
-        result['done_count'] = done
-        result['failed_count'] = failed
-        return result
+        with self._lock:
+            album = self.album_row(album_id)
+            if not album:
+                return None
+            result = dict(album)
+            episodes = self.conn.execute(
+                'SELECT episode, path, status, updated_at '
+                'FROM episodes WHERE album_id=? ORDER BY episode',
+                (album_id,)).fetchall()
+            result['episodes'] = [dict(e) for e in episodes]
+            done = sum(1 for e in episodes if e['status'] == 'done')
+            failed = sum(1 for e in episodes if e['status'] == 'failed')
+            result['done_count'] = done
+            result['failed_count'] = failed
+            return result
 
     def dashboard_stats(self) -> dict:
-        albums = self.conn.execute('SELECT COUNT(*) AS c FROM albums').fetchone()['c']
-        total = self.conn.execute(
-            'SELECT COALESCE(SUM(episode_count), 0) AS c FROM albums').fetchone()['c']
-        done = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM episodes WHERE status='done'").fetchone()['c']
-        failed = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM episodes WHERE status='failed'").fetchone()['c']
-        categories = [row['category'] for row in self.conn.execute(
-            'SELECT DISTINCT category FROM albums ORDER BY category')]
-        return {
-            'albums': albums,
-            'total_episodes': total,
-            'done_episodes': done,
-            'failed_episodes': failed,
-            'categories': categories,
-        }
+        with self._lock:
+            albums = self.conn.execute('SELECT COUNT(*) AS c FROM albums').fetchone()['c']
+            total = self.conn.execute(
+                'SELECT COALESCE(SUM(episode_count), 0) AS c FROM albums').fetchone()['c']
+            done = self.conn.execute(
+                "SELECT COUNT(*) AS c FROM episodes WHERE status='done'").fetchone()['c']
+            failed = self.conn.execute(
+                "SELECT COUNT(*) AS c FROM episodes WHERE status='failed'").fetchone()['c']
+            categories = [row['category'] for row in self.conn.execute(
+                'SELECT DISTINCT category FROM albums ORDER BY category')]
+            return {
+                'albums': albums,
+                'total_episodes': total,
+                'done_episodes': done,
+                'failed_episodes': failed,
+                'categories': categories,
+            }
 
     def reset_failed(self, album_id: int | None = None) -> int:
         with self._lock:
@@ -181,4 +189,5 @@ class StateDB:
             return cur.rowcount
 
     def close(self) -> None:
-        self.conn.close()
+        with self._lock:
+            self.conn.close()

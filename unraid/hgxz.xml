@@ -15,7 +15,7 @@
   <TemplateURL/>
   <Icon/>
   <ExtraParams>--restart unless-stopped</ExtraParams>
-  <PostArgs>--daemon --schedule 03:30</PostArgs>
+  <PostArgs>--daemon</PostArgs>
   <CPUset/>
   <DateInstalled/>
   <DonateText/>
@@ -32,5 +32,6 @@
   <Config Name="每日定时同步时间" Target="SCHEDULE" Default="03:30" Mode="" Description="每日自动同步时间，格式 HH:MM（默认凌晨 03:30）" Type="Variable" Display="always" Required="false" Mask="false">03:30</Config>
   <Config Name="HTTP 代理" Target="HTTP_PROXY" Default="" Mode="" Description="视频 CDN 下载代理；正常网络留空即可" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="HTTPS 代理" Target="HTTPS_PROXY" Default="" Mode="" Description="同上；正常网络留空即可" Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="不走代理的地址" Target="NO_PROXY" Default="" Mode="" Description="不走代理的地址；留空即可" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="不走代理的地址" Target="NO_PROXY" Default="127.0.0.1,localhost" Mode="" Description="不走代理的本地地址，默认 127.0.0.1,localhost（主站与视频均走代理）" Type="Variable" Display="advanced" Required="false" Mask="false">127.0.0.1,localhost</Config>
+  <Config Name="文件权限掩码" Target="UMASK" Default="000" Mode="" Description="新创建文件权限掩码，默认 000（避免 Unraid SMB 共享权限不足）" Type="Variable" Display="advanced" Required="false" Mask="false">000</Config>
 </Container>

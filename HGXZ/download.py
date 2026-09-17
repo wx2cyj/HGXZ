@@ -36,7 +36,7 @@ def probe_media(path: Path) -> dict:
 
 
 def validate_media(info: dict, minimum_duration: float = 10.0) -> bool:
-    return bool(info.get('duration', 0) >= minimum_duration and info.get('video', 0) >= 1 and info.get('audio', 0) >= 1)
+    return bool(info.get('duration', 0) >= minimum_duration and info.get('video', 0) >= 1)
 
 
 def _fetch(url: str, referer: str, timeout: float) -> bytes:

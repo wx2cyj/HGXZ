@@ -99,7 +99,10 @@ class Archiver:
                    force: bool = False) -> dict:
         html = self.client.get_text(f'/detail/{album_id}/')
         album = parse_detail_html(album_id, category['name'], html)
-        if album.category != category['name']:
+        cat_match = next((c for c in self.config['site']['categories'] if c['name'] == album.category), None)
+        if cat_match:
+            category = cat_match
+        elif album.category != category['name']:
             LOG.warning('skip album=%s expected=%s actual=%s',
                         album.id, category['name'], album.category)
             return {'album_id': album.id, 'skipped': True,
@@ -122,12 +125,15 @@ class Archiver:
             video = season_dir / build_episode_filename(album.title, number)
             nfo = video.with_suffix('.nfo')
             ep = Episode(album.id, number, f'S01E{number:02d}', album.plot)
-            write_episode_nfo(nfo, album, ep)
             if metadata_only:
+                write_episode_nfo(nfo, album, ep)
                 continue
             if self.state.episode_done(album.id, number):
+                if not nfo.exists():
+                    write_episode_nfo(nfo, album, ep)
                 done += 1
                 continue
+            write_episode_nfo(nfo, album, ep)
             if video.exists():
                 try:
                     if validate_media(probe_media(video), self.minimum_duration):
@@ -157,10 +163,16 @@ class Archiver:
                     break
                 except Exception as exc:
                     last = exc
+                    err_msg = str(exc).lower()
+                    is_permanent = any(k in err_msg for k in ('empty video_url', 'play endpoint failed', 'not found', '404', '403'))
                     LOG.warning('album=%s ep=%s attempt=%s failed=%s',
                                 album.id, number, attempt, exc)
+                    if is_permanent:
+                        LOG.error('album=%s ep=%s permanent failure, skipping retries: %s',
+                                  album.id, number, exc)
+                        break
                     if attempt < self.retries:
-                        time.sleep([30, 120, 600][min(attempt - 1, 2)])
+                        time.sleep([5, 15, 30][min(attempt - 1, 2)])
             else:
                 self.state.mark_episode(album.id, number, str(video), 'failed')
                 failed_episodes.append(number)
@@ -176,13 +188,11 @@ class Archiver:
 
     def scan(self, *, metadata_only=False, only_id=None,
              max_albums=None, max_episodes=None):
-        found = self.discover()
         force = bool(only_id)
         if only_id:
-            chosen = [(i, c) for i, c in found if i == only_id]
-            if not chosen:
-                chosen = [(only_id, self.config['site']['categories'][0])]
-            found = chosen
+            found = [(only_id, self.config['site']['categories'][0])]
+        else:
+            found = self.discover()
         if max_albums:
             found = found[:max_albums]
         results = []
@@ -300,6 +310,12 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s %(levelname)s %(message)s')
+    umask_val = os.environ.get('UMASK')
+    if umask_val:
+        try:
+            os.umask(int(umask_val, 8))
+        except Exception as exc:
+            logging.getLogger('HGXZ').warning('failed to set umask=%s: %s', umask_val, exc)
     config = load_config(Path(args.config))
 
     if args.daemon:

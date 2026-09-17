@@ -100,12 +100,12 @@ curl -sSL https://raw.githubusercontent.com/wx2cyj/HGXZ/main/config.example.json
 | **日志目录** | Path: /logs | `/mnt/user/appdata/HGXZ/logs` | 运行日志 |
 | **媒体目录** | Path: /media | `/mnt/user/QTZL/黄果` | 视频下载保存目录 |
 | **时区** | Variable: TZ | `Asia/Shanghai` | 确保定时时间准确 |
-| **运行参数** | Post Arguments | `--daemon --schedule 03:30` | 常驻后台运行，每天凌晨 03:30 同步 |
+| **运行参数** | Post Arguments | `--daemon` | 常驻后台运行（定时时间由 SCHEDULE 变量控制） |
 
 > 🌐 **关于网络代理配置（可选）：**
-> 如果你的视频 CDN 下载需要走代理，点击界面下方的 **【显示更多设置...】（Show more settings...）**：
+> 如果你的主站与视频 CDN 需要走代理，点击界面下方的 **【显示更多设置...】（Show more settings...）**：
 > - `HTTP_PROXY` / `HTTPS_PROXY`：填入你的代理地址（如 `http://192.168.2.6:10086`），不需要可留空。
-> - `NO_PROXY`：保持默认的 `127.0.0.1,localhost,huangguoai.com,rxzfszht.cc`（主站域名直连，视频走代理）。
+> - `NO_PROXY`：保持默认的 `127.0.0.1,localhost`（主站与视频均走代理）。
 
 5. 确认无误后，点击最下方的 **【应用】（Apply）** 按钮。Unraid 将自动拉取私有镜像并启动容器。
 
