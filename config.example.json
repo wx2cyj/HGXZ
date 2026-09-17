@@ -30,7 +30,7 @@
   "download": {
     "root": "/media",
     "retries": 3,
-    "minimum_duration": 10,
+    "minimum_duration": 3,
     "recheck_days": 7,
     "failure_cooldown_hours": 24,
     "episode_timeout": 1800

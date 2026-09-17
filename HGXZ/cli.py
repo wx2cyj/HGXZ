@@ -36,7 +36,7 @@ class Archiver:
         self.root = Path(config['download']['root'])
         self.state = StateDB(Path(config['state']['database']))
         self.retries = int(config['download'].get('retries', 3))
-        self.minimum_duration = float(config['download'].get('minimum_duration', 10))
+        self.minimum_duration = float(config['download'].get('minimum_duration', 3))
         self.recheck_days = float(config['download'].get('recheck_days', 7))
         self.failure_cooldown_hours = float(config['download'].get('failure_cooldown_hours', 24))
         self.episode_timeout = float(config['download'].get('episode_timeout', 1800))
@@ -171,7 +171,10 @@ class Archiver:
                 except Exception as exc:
                     last = exc
                     err_msg = str(exc).lower()
-                    is_permanent = any(k in err_msg for k in ('empty video_url', 'play endpoint failed', 'not found', '404', '403'))
+                    is_permanent = any(k in err_msg for k in (
+                        'empty video_url', 'play endpoint failed', 'not found', '404', '403',
+                        '不存在', '已下架', '下架'
+                    ))
                     LOG.warning('album=%s ep=%s attempt=%s failed=%s',
                                 album.id, number, attempt, exc)
                     if is_permanent:
@@ -336,7 +339,7 @@ def main() -> int:
         try:
             result = scan_existing(
                 Path(config['download']['root']), state,
-                float(config['download'].get('minimum_duration', 10)))
+                float(config['download'].get('minimum_duration', 3)))
         finally:
             state.close()
         print(json.dumps(result, ensure_ascii=False, indent=2))

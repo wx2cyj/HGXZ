@@ -35,7 +35,7 @@ def probe_media(path: Path) -> dict:
     }
 
 
-def validate_media(info: dict, minimum_duration: float = 10.0) -> bool:
+def validate_media(info: dict, minimum_duration: float = 3.0) -> bool:
     return bool(info.get('duration', 0) >= minimum_duration and info.get('video', 0) >= 1)
 
 
@@ -132,7 +132,7 @@ def _decrypt_segment(data: bytes, key: bytes, iv: bytes) -> bytes:
     return plain
 
 
-def download_hls(url: str, destination: Path, referer: str, minimum_duration: float = 10.0, timeout: float | None = 1800.0) -> dict:
+def download_hls(url: str, destination: Path, referer: str, minimum_duration: float = 3.0, timeout: float | None = 1800.0) -> dict:
     # Fetch every HLS segment as its own short-lived request with retries
     # instead of one long ffmpeg stream: the CDN resets long connections
     # mid-transfer, but a few megabytes per request survive that fine.
@@ -185,17 +185,15 @@ def download_hls(url: str, destination: Path, referer: str, minimum_duration: fl
                     if (index + 1) % 10 == 0 or (index + 1) == len(segments):
                         LOG.info('downloaded segments %d/%d', index + 1, len(segments))
             LOG.info('merging %d segments with ffmpeg...', len(segments))
-            cmd = [
-                'ffmpeg', '-hide_banner', '-loglevel', 'warning', '-xerror', '-y',
-                # Some sources ship segments whose DTS steps backwards at the
-                # boundary; ignore those and regenerate timestamps so the mp4
-                # muxer accepts the stream.
+            base_cmd = [
+                'ffmpeg', '-hide_banner', '-loglevel', 'warning', '-y',
+                '-analyzeduration', '100M', '-probesize', '100M',
                 '-fflags', '+igndts+genpts',
                 '-f', 'concat', '-safe', '0', '-i', str(listing),
                 '-avoid_negative_ts', 'make_zero',
-                '-map', '0', '-c', 'copy', '-movflags', '+faststart',
-                '-f', 'mp4', str(partial),
+                '-map', '0',
             ]
+            cmd = base_cmd + ['-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', str(partial)]
             try:
                 result = subprocess.run(cmd, check=True, capture_output=True, text=True,
                                         timeout=None if deadline is None else max(1.0, deadline - time.monotonic()))
@@ -203,8 +201,14 @@ def download_hls(url: str, destination: Path, referer: str, minimum_duration: fl
                 if 'failed too many times, skipping' in stderr.lower():
                     raise RuntimeError('concat reported skipped segments')
             except subprocess.CalledProcessError as exc:
-                stderr = (exc.stderr or '').strip()
-                raise RuntimeError(f'ffmpeg exited with {exc.returncode}: {stderr[-800:]}') from exc
+                LOG.warning('ffmpeg copy mode failed, retrying with audio transcode: %s', (exc.stderr or '').strip()[-200:])
+                cmd_fallback = base_cmd + ['-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', '-f', 'mp4', str(partial)]
+                try:
+                    result = subprocess.run(cmd_fallback, check=True, capture_output=True, text=True,
+                                            timeout=None if deadline is None else max(1.0, deadline - time.monotonic()))
+                except subprocess.CalledProcessError as exc2:
+                    stderr = (exc2.stderr or '').strip()
+                    raise RuntimeError(f'ffmpeg exited with {exc2.returncode}: {stderr[-800:]}') from exc2
         finally:
             for child in workdir.iterdir():
                 child.unlink(missing_ok=True)

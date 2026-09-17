@@ -177,7 +177,7 @@ docker run -d --name HGXZ \
   "download": {
     "root": "/media",
     "retries": 3,
-    "minimum_duration": 10,
+    "minimum_duration": 3,
     "recheck_days": 7,
     "failure_cooldown_hours": 24,
     "episode_timeout": 1800
@@ -199,7 +199,7 @@ docker run -d --name HGXZ \
 | `site.categories` | 抓取的短剧分类与对应生成的 Emby 媒体库目录名 | — |
 | `download.root` | 视频下载根目录（对应容器内 `/media`） | `/media` |
 | `download.retries` | 单集重试次数 | `3` |
-| `download.minimum_duration` | 视频最短有效时长（秒），过滤无效视频 | `10` |
+| `download.minimum_duration` | 视频最短有效时长（秒），过滤无效视频（建议 3 秒以兼容短花絮） | `3` |
 | `download.recheck_days` | 已完结专辑再次核查的间隔天数 | `7` |
 | `download.failure_cooldown_hours` | 失败集的冷却等待时间（小时），避免重复无效请求 | `24` |
 | `download.episode_timeout` | 单集下载总超时时间（秒） | `1800` |

@@ -14,7 +14,7 @@ EPISODE_RE = re.compile(r'\.S01E(\d+)\.\w+$', re.I)
 
 
 def scan_existing(root: Path, state: StateDB,
-                  minimum_duration: float = 10.0,
+                  minimum_duration: float = 3.0,
                   validate: bool = True) -> dict:
     """Walk the media root, find previously downloaded videos by the
     ``[huangguo-{id}]`` directory naming convention, and register them in the
