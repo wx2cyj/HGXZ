@@ -5,6 +5,7 @@ WORKDIR /app
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 COPY HGXZ /app/HGXZ
-ENV PYTHONUNBUFFERED=1 TZ=Asia/Shanghai
+ENV PYTHONUNBUFFERED=1 TZ=Asia/Shanghai DAEMON=true SCHEDULE=03:30
 EXPOSE 8099
 ENTRYPOINT ["python", "-m", "HGXZ.cli"]
+CMD ["--daemon"]

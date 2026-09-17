@@ -7,6 +7,7 @@ import argparse
 import json
 import logging
 import logging.handlers
+import os
 import threading
 import time
 import re
@@ -289,8 +290,9 @@ def main() -> int:
                         help='扫描媒体目录，将已有视频注册到状态库')
     parser.add_argument('--json', action='store_true')
     parser.add_argument('--daemon', action='store_true',
+                        default=os.environ.get('DAEMON', 'true').lower() in ('1', 'true', 'yes'),
                         help='常驻运行：启动后同步一次，之后每天定时同步，同时开启 WebUI')
-    parser.add_argument('--schedule', default='03:30',
+    parser.add_argument('--schedule', default=os.environ.get('SCHEDULE', '03:30'),
                         help='--daemon 模式下的每日同步时间 HH:MM')
     parser.add_argument('--port', type=int, default=8099,
                         help='WebUI 端口（默认 8099）')
