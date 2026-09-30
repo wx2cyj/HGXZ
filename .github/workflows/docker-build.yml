@@ -5,6 +5,13 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_BUILD_SUMMARY: false
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -32,7 +39,6 @@ jobs:
           images: ghcr.io/wx2cyj/hgxz
           tags: |
             type=raw,value=latest
-            type=sha,prefix=,format=short
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -42,5 +48,17 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Clean up old container versions
+        uses: actions/delete-package-versions@v5
+        continue-on-error: true
+        with:
+          package-name: 'hgxz'
+          package-type: 'container'
+          delete-only-untagged-versions: 'true'
+          min-versions-to-keep: 3
+
