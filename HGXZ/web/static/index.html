@@ -382,11 +382,16 @@ document.querySelectorAll('.tab').forEach(tab => {
 async function loadDashboard(){
   try {
     const d = await api('/api/dashboard');
+    // Databases created before size tracking report 0 bytes even though
+    // files exist; point the user at the scan that backfills them.
+    const sizeHint = (!d.downloaded_bytes && d.done_episodes)
+      ? '<span style="color:#fbbf24">点「扫描已有」补全</span>'
+      : fmtBytes(d.downloaded_bytes);
     document.getElementById('stats').innerHTML = `
       <div class="stat blue"><div class="value">${d.albums || 0}</div><div class="label">专辑总数</div>
         <div class="sub">共 ${d.total_episodes || 0} 集</div></div>
       <div class="stat green"><div class="value">${d.done_episodes || 0}</div><div class="label">已下载</div>
-        <div class="sub">${fmtBytes(d.downloaded_bytes)}</div></div>
+        <div class="sub">${sizeHint}</div></div>
       <div class="stat amber"><div class="value">${d.complete_albums || 0}</div><div class="label">完整专辑</div>
         <div class="sub">已完结 ${d.ended_albums || 0} 部</div></div>
       <div class="stat red"><div class="value">${d.failed_episodes || 0}</div><div class="label">失败集数</div>

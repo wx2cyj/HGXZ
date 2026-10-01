@@ -82,6 +82,15 @@ def scan_existing(root: Path, state: StateDB,
             for ep_num, ep_path in episodes:
                 if state.episode_done(album_id, ep_num):
                     result['episodes_valid'] += 1
+                    # Databases written before size tracking existed report
+                    # 0 bytes; backfill from the file itself, no re-probe.
+                    row = state.episode_row(album_id, ep_num)
+                    if row and not row['size_bytes']:
+                        try:
+                            state.mark_episode(album_id, ep_num, row['path'], 'done',
+                                               ep_path.stat().st_size)
+                        except OSError:
+                            pass
                     continue
                 if validate:
                     try:
