@@ -170,6 +170,10 @@ header .container{display:flex;align-items:center;justify-content:space-between;
 .log-line .ts{color:var(--text3);flex:none}
 .log-line .msg{min-width:0}
 
+/* ---------- Page sections ---------- */
+.page{display:none}
+.page.active{display:block}
+
 /* ---------- Empty / misc ---------- */
 .empty{text-align:center;padding:48px 16px;color:var(--text3);font-size:.9em}
 .empty .big{font-size:2.4em;display:block;margin-bottom:10px;opacity:.5}
@@ -352,6 +356,12 @@ function relTime(s){
   if (d < 86400) return Math.floor(d / 3600) + ' 小时前';
   return Math.floor(d / 86400) + ' 天前';
 }
+/* Percentages are clamped: a show that grew on the site can report more
+   finished episodes than the last known episode_count. */
+function pctOf(part, whole){
+  if (!whole || whole <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round(part / whole * 100)));
+}
 
 /* ---------------- tabs ---------------- */
 document.querySelectorAll('.tab').forEach(tab => {
@@ -404,8 +414,10 @@ async function loadCategoryStats(categories){
       const total = g.rows.reduce((s, a) => s + (a.episode_count || 0), 0);
       const done = g.rows.reduce((s, a) => s + (a.done_count || 0), 0);
       const failed = g.rows.reduce((s, a) => s + (a.failed_count || 0), 0);
-      const pct = total ? Math.round(done / total * 100) : 0;
-      const badPct = total ? Math.round(failed / total * 100) : 0;
+      const pct = pctOf(done, total);
+      const badPct = pctOf(failed, total);
+      const doneW = total ? Math.min(100, done / total * 100) : 0;
+      const badW = total ? Math.min(100 - doneW, failed / total * 100) : 0;
       return `<div style="margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:.85em">
           <span style="font-weight:600">${esc(g.name)}</span>
@@ -413,8 +425,8 @@ async function loadCategoryStats(categories){
             failed ? ` · <span style="color:#fca5a5">失败 ${failed}</span>` : ''}</span>
         </div>
         <div class="progress" style="margin-top:8px;height:8px">
-          <div class="ok" style="width:${pct}%"></div>
-          <div class="bad" style="width:${badPct}%"></div>
+          <div class="ok" style="width:${doneW}%"></div>
+          <div class="bad" style="width:${badW}%"></div>
         </div>
       </div>`;
     }).join('');
@@ -494,9 +506,9 @@ async function loadAlbums(){
       const done = a.done_count || 0;
       const failed = a.failed_count || 0;
       const shown = total || (done + failed);
-      const pct = shown ? Math.round(done / shown * 100) : (done ? 100 : 0);
-      const okW = shown ? (done / shown * 100) : 0;
-      const badW = shown ? (failed / shown * 100) : 0;
+      const pct = pctOf(done, shown);
+      const doneW = shown ? Math.min(100, done / shown * 100) : 0;
+      const badW = shown ? Math.min(100 - doneW, failed / shown * 100) : 0;
       const complete = total > 0 && done >= total;
       let tag = '<span class="tag tag-ongoing">下载中</span>';
       if (failed > 0) tag = '<span class="tag tag-failed">有失败</span>';
@@ -518,7 +530,7 @@ async function loadAlbums(){
           <div class="album-right">
             <div class="album-pct">${pct}%</div>
             <div class="progress">
-              <div class="ok" style="width:${okW}%"></div>
+              <div class="ok" style="width:${doneW}%"></div>
               <div class="bad" style="width:${badW}%"></div>
             </div>
           </div>
@@ -544,7 +556,9 @@ async function showDetail(albumId){
     const done = a.done_count || 0;
     const failed = a.failed_count || 0;
     const missing = Math.max(0, total - done - failed);
-    const pct = total ? Math.round(done / total * 100) : 0;
+    const pct = pctOf(done, total);
+    const doneW = total ? Math.min(100, done / total * 100) : 0;
+    const badW = total ? Math.min(100 - doneW, failed / total * 100) : 0;
     const epMap = {};
     episodes.forEach(e => { epMap[e.episode] = e; });
 
