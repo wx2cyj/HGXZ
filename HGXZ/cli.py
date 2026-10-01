@@ -155,7 +155,7 @@ class Archiver:
                    metadata_only: bool = False,
                    max_episodes: int | None = None,
                    force: bool = False) -> dict:
-        html = self.client.get_text(f'/detail/{album_id}/')
+        html = self.client.get_text(f'/video/{album_id}/')
         album = parse_detail_html(album_id, category['name'], html)
         cat_match = next((c for c in self.config['site']['categories'] if c['name'] == album.category), None)
         if cat_match:
