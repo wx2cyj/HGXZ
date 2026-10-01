@@ -12,6 +12,9 @@ class StateDB:
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute('PRAGMA journal_mode=WAL')
+        # Multiple threads share this connection (scheduled sync, manual sync,
+        # request handlers); wait for a busy writer instead of failing.
+        self.conn.execute('PRAGMA busy_timeout=10000')
         self._lock = threading.RLock()
         self.conn.executescript('''
         CREATE TABLE IF NOT EXISTS albums (
@@ -30,6 +33,7 @@ class StateDB:
           path TEXT NOT NULL,
           status TEXT NOT NULL,
           updated_at TEXT NOT NULL,
+          size_bytes INTEGER NOT NULL DEFAULT 0,
           PRIMARY KEY(album_id, episode)
         );
         ''')
@@ -40,6 +44,10 @@ class StateDB:
         cols = {row[1] for row in self.conn.execute('PRAGMA table_info(albums)')}
         if 'directory' not in cols:
             self.conn.execute("ALTER TABLE albums ADD COLUMN directory TEXT NOT NULL DEFAULT ''")
+            self.conn.commit()
+        ep_cols = {row[1] for row in self.conn.execute('PRAGMA table_info(episodes)')}
+        if 'size_bytes' not in ep_cols:
+            self.conn.execute('ALTER TABLE episodes ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT 0')
             self.conn.commit()
 
     @staticmethod
@@ -62,12 +70,14 @@ class StateDB:
             ''', (album_id, category, title, episode_count, int(ended), directory, now, now))
             self.conn.commit()
 
-    def mark_episode(self, album_id: int, episode: int, path: str, status: str) -> None:
+    def mark_episode(self, album_id: int, episode: int, path: str, status: str,
+                     size_bytes: int = 0) -> None:
         with self._lock:
             self.conn.execute('''
-              INSERT INTO episodes(album_id,episode,path,status,updated_at) VALUES(?,?,?,?,?)
-              ON CONFLICT(album_id,episode) DO UPDATE SET path=excluded.path,status=excluded.status,updated_at=excluded.updated_at
-            ''', (album_id, episode, path, status, self._now()))
+              INSERT INTO episodes(album_id,episode,path,status,updated_at,size_bytes) VALUES(?,?,?,?,?,?)
+              ON CONFLICT(album_id,episode) DO UPDATE SET path=excluded.path,status=excluded.status,
+                updated_at=excluded.updated_at,size_bytes=excluded.size_bytes
+            ''', (album_id, episode, path, status, self._now(), max(0, int(size_bytes))))
             self.conn.commit()
 
     def episode_done(self, album_id: int, episode: int) -> bool:
@@ -76,6 +86,12 @@ class StateDB:
                 'SELECT status,path FROM episodes WHERE album_id=? AND episode=?',
                 (album_id, episode)).fetchone()
             return bool(row and row['status'] == 'done' and Path(row['path']).exists())
+
+    def episode_row(self, album_id: int, episode: int) -> sqlite3.Row | None:
+        with self._lock:
+            return self.conn.execute(
+                'SELECT * FROM episodes WHERE album_id=? AND episode=?',
+                (album_id, episode)).fetchone()
 
     def episode_failed_at(self, album_id: int, episode: int) -> str | None:
         with self._lock:
@@ -147,7 +163,7 @@ class StateDB:
                 return None
             result = dict(album)
             episodes = self.conn.execute(
-                'SELECT episode, path, status, updated_at '
+                'SELECT episode, path, status, updated_at, size_bytes '
                 'FROM episodes WHERE album_id=? ORDER BY episode',
                 (album_id,)).fetchall()
             result['episodes'] = [dict(e) for e in episodes]
@@ -166,6 +182,17 @@ class StateDB:
                 "SELECT COUNT(*) AS c FROM episodes WHERE status='done'").fetchone()['c']
             failed = self.conn.execute(
                 "SELECT COUNT(*) AS c FROM episodes WHERE status='failed'").fetchone()['c']
+            ended = self.conn.execute(
+                'SELECT COUNT(*) AS c FROM albums WHERE ended=1').fetchone()['c']
+            complete = self.conn.execute('''
+                SELECT COUNT(*) AS c FROM albums a
+                JOIN (SELECT album_id, SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS d
+                      FROM episodes GROUP BY album_id) e ON e.album_id = a.id
+                WHERE a.episode_count > 0 AND e.d >= a.episode_count
+            ''').fetchone()['c']
+            bytes_total = self.conn.execute(
+                "SELECT COALESCE(SUM(size_bytes), 0) AS c FROM episodes WHERE status='done'"
+            ).fetchone()['c']
             categories = [row['category'] for row in self.conn.execute(
                 'SELECT DISTINCT category FROM albums ORDER BY category')]
             return {
@@ -173,7 +200,28 @@ class StateDB:
                 'total_episodes': total,
                 'done_episodes': done,
                 'failed_episodes': failed,
+                'ended_albums': ended,
+                'complete_albums': complete,
+                'downloaded_bytes': bytes_total,
                 'categories': categories,
+            }
+
+    def episode_stats(self, album_id: int) -> dict:
+        """Per-album counters plus the most recent episode activity."""
+        with self._lock:
+            row = self.conn.execute('''
+                SELECT
+                  SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done,
+                  SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,
+                  MAX(CASE WHEN status='done' THEN updated_at END) AS last_done_at,
+                  COALESCE(SUM(CASE WHEN status='done' THEN size_bytes ELSE 0 END), 0) AS bytes
+                FROM episodes WHERE album_id=?
+            ''', (album_id,)).fetchone()
+            return {
+                'done': row['done'] or 0,
+                'failed': row['failed'] or 0,
+                'last_done_at': row['last_done_at'],
+                'downloaded_bytes': row['bytes'] or 0,
             }
 
     def reset_failed(self, album_id: int | None = None) -> int:

@@ -4,12 +4,12 @@ import logging
 import re
 from pathlib import Path
 
+from .core import ALBUM_DIR_RE
 from .download import probe_media, validate_media
 from .state import StateDB
 
 LOG = logging.getLogger('HGXZ')
 
-ALBUM_DIR_RE = re.compile(r'^(.*?)\s*\[huangguo-(\d+)\]$')
 EPISODE_RE = re.compile(r'\.S01E(\d+)\.\w+$', re.I)
 
 
@@ -48,6 +48,13 @@ def scan_existing(root: Path, state: StateDB,
             album_id = int(match.group(2))
             result['albums_found'] += 1
 
+            # Scanning the filesystem knows nothing about whether a show is
+            # still airing, so an existing "ended" flag from a previous sync
+            # must survive the scan -- otherwise every completed album gets
+            # re-fetched on every sync forever.
+            existing = state.album_row(album_id)
+            ended = bool(existing['ended']) if existing else False
+
             season_dir = album_dir / 'Season 01'
             search_dir = season_dir if season_dir.is_dir() else album_dir
 
@@ -64,12 +71,12 @@ def scan_existing(root: Path, state: StateDB,
 
             if not episodes:
                 LOG.debug('album=%s title=%s has no episode files', album_id, title)
-                state.upsert_album(album_id, category_name, title, 0, False,
+                state.upsert_album(album_id, category_name, title, 0, ended,
                                    str(album_dir))
                 continue
 
             max_ep = max(ep_num for ep_num, _ in episodes)
-            state.upsert_album(album_id, category_name, title, max_ep, False,
+            state.upsert_album(album_id, category_name, title, max_ep, ended,
                                str(album_dir))
 
             for ep_num, ep_path in episodes:
@@ -80,7 +87,8 @@ def scan_existing(root: Path, state: StateDB,
                     try:
                         info = probe_media(ep_path)
                         if validate_media(info, minimum_duration):
-                            state.mark_episode(album_id, ep_num, str(ep_path), 'done')
+                            state.mark_episode(album_id, ep_num, str(ep_path), 'done',
+                                               info.get('size', 0))
                             result['episodes_valid'] += 1
                         else:
                             state.mark_episode(album_id, ep_num, str(ep_path), 'failed')
@@ -92,7 +100,8 @@ def scan_existing(root: Path, state: StateDB,
                         LOG.warning('probe error: album=%s ep=%s error=%s',
                                     album_id, ep_num, exc)
                 else:
-                    state.mark_episode(album_id, ep_num, str(ep_path), 'done')
+                    state.mark_episode(album_id, ep_num, str(ep_path), 'done',
+                                       ep_path.stat().st_size)
                     result['episodes_valid'] += 1
 
             LOG.info('scanned album=%s title=%s episodes=%d', album_id, title,
