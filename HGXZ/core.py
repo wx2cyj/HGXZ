@@ -76,7 +76,9 @@ def parse_category_panel(source: str) -> tuple[list[int], int | None]:
     panel = source[start:end]
     seen: set[int] = set()
     result: list[int] = []
-    for raw in re.findall(r'href=["\']/detail/(\d+)/', panel, re.I):
+    # The site switched its album detail path from /detail/<id>/ to /video/<id>/
+    # (old URLs redirect), so both forms are accepted.
+    for raw in re.findall(r'href=["\']/(?:detail|video)/(\d+)/', panel, re.I):
         album_id = int(raw)
         if album_id not in seen:
             seen.add(album_id)
