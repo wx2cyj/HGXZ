@@ -448,7 +448,8 @@ async function loadRecent(){
     if (!done.length) { box.innerHTML = '<div class="empty"><span class="big">📺</span>还没有完整下载的专辑</div>'; return; }
     box.innerHTML = done.map(a => `
       <div class="album-item" style="margin-bottom:8px" onclick="jumpToAlbum(${a.id})">
-        <div class="cover ph">🍊</div>
+        <img class="cover" loading="lazy" src="/api/albums/${a.id}/poster" alt=""
+             onerror="this.outerHTML='&lt;div class=&quot;cover ph&quot;&gt;🍊&lt;/div&gt;'">
         <div class="album-main">
           <div class="album-title">${esc(a.title)}</div>
           <div class="album-meta">
