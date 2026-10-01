@@ -8,6 +8,8 @@ from xml.etree.ElementTree import Element, SubElement, ElementTree, indent
 import json
 import re
 
+ALBUM_DIR_RE = re.compile(r'^(.*?)\s*\[huangguo-(\d+)\]$')
+
 
 @dataclass
 class Album:
@@ -44,11 +46,24 @@ def build_episode_filename(album_title: str, episode_number: int, suffix: str = 
     return f"{sanitize_filename(album_title)}.S01E{episode_number:02d}{suffix}"
 
 
-def parse_category_html(source: str) -> list[int]:
+def parse_category_panel(source: str) -> tuple[list[int], int | None]:
+    """Extract album IDs and the declared total from the 'latest' channel panel.
+
+    The attribute order inside the panel tag is not guaranteed, so the total is
+    looked up within the matched tag rather than relying on a fixed order.
+    Returns ``total=None`` when the page does not declare one.
+    """
     panel_start = re.search(r'<[^>]+data-channel-panel=["\']latest["\'][^>]*>', source, re.I)
     if not panel_start:
-        return []
-    tag = panel_start.group(0).split(None, 1)[0][1:]
+        return [], None
+    tag_html = panel_start.group(0)
+    tag_match = re.match(r'<\s*([a-zA-Z][\w:-]*)', tag_html)
+    if not tag_match:
+        return [], None
+    tag = tag_match.group(1)
+    total_match = re.search(r'data-panel-total=["\'](\d+)["\']', tag_html)
+    total = int(total_match.group(1)) if total_match else None
+
     start = panel_start.end()
     depth = 1
     token_re = re.compile(rf'</?{re.escape(tag)}\b[^>]*>', re.I)
@@ -66,7 +81,7 @@ def parse_category_html(source: str) -> list[int]:
         if album_id not in seen:
             seen.add(album_id)
             result.append(album_id)
-    return result
+    return result, total
 
 
 def _meta(source: str, key: str, attr: str = 'name') -> str:
@@ -79,22 +94,31 @@ def _meta(source: str, key: str, attr: str = 'name') -> str:
 
 
 def parse_detail_html(album_id: int, category: str, source: str) -> Album:
-    history_match = re.search(r'<body[^>]+data-history=["\']([^"\']+)', source, re.I)
+    # Capture the attribute up to its matching quote: the payload may be
+    # HTML-escaped (&quot;) or contain raw quotes of the other kind.
+    history_match = re.search(r'<body[^>]+data-history=(["\'])(.*?)\1', source, re.I | re.S)
     history = {}
     if history_match:
         try:
-            history = json.loads(unescape(history_match.group(1)))
+            history = json.loads(unescape(history_match.group(2)))
         except json.JSONDecodeError:
             history = {}
+    numbers = [int(x) for x in re.findall(r'data-ep-id=["\'](\d+)', source, re.I)]
     title = str(history.get('title') or '').strip()
     if not title:
         raw_title = re.search(r'<title[^>]*>(.*?)</title>', source, re.I | re.S)
-        title = unescape(raw_title.group(1)).split(' - ')[0].strip() if raw_title else f'huangguo-{album_id}'
+        title = unescape(raw_title.group(1)).split(' - ')[0].strip() if raw_title else ''
     plot = _meta(source, 'description') or str(history.get('desc') or '')
     cover = _meta(source, 'og:image', 'property')
+    # A real detail page always carries at least one of these structures. When
+    # none is present the response is an anti-bot challenge or an error page,
+    # and parsing it would fabricate an album titled "huangguo-<id>".
+    if not title and not numbers and not plot and not cover:
+        raise ValueError(
+            f'album {album_id}: detail page has no recognizable metadata '
+            '(blocked by anti-bot or site layout changed)')
     tags = [x.strip() for x in str(history.get('tags') or '').split(',') if x.strip()]
     episode_label = str(history.get('episode') or '')
-    numbers = [int(x) for x in re.findall(r'data-ep-id=["\'](\d+)', source, re.I)]
     if not numbers:
         numbers = [int(x) for x in re.findall(r'(?:更新至|全)\s*(\d+)\s*集', episode_label)]
     episode_count = max(numbers, default=1)
@@ -102,7 +126,8 @@ def parse_detail_html(album_id: int, category: str, source: str) -> Album:
     year_match = re.search(r'/upload/(20\d{2})\d{4}/', cover)
     year = int(year_match.group(1)) if year_match else 0
     actual_category = str(history.get('cat') or category).strip()
-    return Album(album_id, actual_category, title, plot, year, tags, episode_count, ended, cover)
+    return Album(album_id, actual_category, title or f'huangguo-{album_id}', plot,
+                 year, tags, episode_count, ended, cover)
 
 
 def _write_xml(path: Path, root: Element) -> None:

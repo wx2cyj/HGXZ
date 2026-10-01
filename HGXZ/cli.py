@@ -12,7 +12,7 @@ import threading
 import time
 import re
 
-from .core import (Episode, build_episode_filename, parse_category_html,
+from .core import (Episode, build_episode_filename, parse_category_panel,
                    parse_detail_html, sanitize_filename, write_episode_nfo,
                    write_tvshow_nfo)
 from .download import download_hls, probe_media, validate_media
@@ -24,6 +24,8 @@ LOG = logging.getLogger('HGXZ')
 
 
 class Archiver:
+    MAX_CATEGORY_PAGES = 100
+
     def __init__(self, config: dict):
         self.config = config
         site = config['site']
@@ -50,17 +52,25 @@ class Archiver:
         for category in self.config['site']['categories']:
             page = 1
             category_ids: list[int] = []
-            while True:
+            known_total: int | None = None
+            while page <= self.MAX_CATEGORY_PAGES:
                 path = category['path'] if page == 1 else category['path'].rstrip('/') + f'/{page}/'
                 html = self.client.get_text(path)
-                ids = parse_category_html(html)
+                ids, page_total = parse_category_panel(html)
+                if page_total is not None:
+                    known_total = page_total
                 fresh = [i for i in ids if i not in category_ids]
                 category_ids.extend(fresh)
-                total_match = re.search(r'data-channel-panel=["\']latest["\'][^>]*data-panel-total=["\'](\d+)', html)
-                total = int(total_match.group(1)) if total_match else len(category_ids)
-                if len(category_ids) >= total or not fresh:
+                if not fresh:
+                    # Last page reached, or the site ignored our page number
+                    # and re-served the same content; stop either way.
+                    break
+                if known_total is not None and len(category_ids) >= known_total:
                     break
                 page += 1
+            else:
+                LOG.warning('category=%s hit the %d-page cap, results may be incomplete',
+                            category['name'], self.MAX_CATEGORY_PAGES)
             LOG.info('category=%s discovered=%d', category['name'], len(category_ids))
             for album_id in category_ids:
                 if album_id not in seen:
@@ -69,7 +79,22 @@ class Archiver:
         return out
 
     def _album_dir(self, album, category: dict) -> Path:
-        return self.root / sanitize_filename(category['library']) / f'{sanitize_filename(album.title)} [huangguo-{album.id}]'
+        library = sanitize_filename(category['library'])
+        row = self.state.album_row(album.id)
+        stored = (row['directory'] if row else '') or ''
+        if stored:
+            stored_path = Path(stored)
+            # Prefer the directory recorded in the state DB so a title change
+            # on the site does not strand the old folder (and duplicate the
+            # album in Emby). Only trust paths that still exist inside the
+            # current media root and library.
+            try:
+                if (stored_path.is_dir() and stored_path.is_relative_to(self.root)
+                        and stored_path.parent.name == library):
+                    return stored_path
+            except OSError:
+                pass
+        return self.root / library / f'{sanitize_filename(album.title)} [huangguo-{album.id}]'
 
     def _complete_and_fresh(self, album_id: int) -> bool:
         row = self.state.album_row(album_id)
@@ -86,12 +111,45 @@ class Archiver:
         return age.total_seconds() < self.recheck_days * 86400
 
     def _sync_cover(self, album, poster: Path) -> None:
+        # Two independent sources: the API returns an AES-encrypted image,
+        # the og:image fallback is usually plain. A failure in one must not
+        # prevent trying the other.
+        for source, url in (('api', None), ('og:image', album.cover_url)):
+            try:
+                if source == 'api':
+                    url = self.client.cover_url(album.id)
+                if not url:
+                    continue
+                write_cover(self.client.get_bytes(url), poster)
+                return
+            except Exception as exc:
+                LOG.warning('album=%s cover via %s failed: %s',
+                            album.id, source, exc)
+
+    def _recorded_video_path(self, album_id: int, number: int) -> Path | None:
+        """Path the episode was actually downloaded to, if it still exists."""
+        row = self.state.episode_row(album_id, number)
+        if not row or not row['path']:
+            return None
+        path = Path(row['path'])
+        return path if path.exists() else None
+
+    @staticmethod
+    def _find_episode_video(season_dir: Path, number: int) -> Path | None:
+        """Locate an already-downloaded episode regardless of its title prefix.
+
+        The site occasionally renames a show; the existing files keep the old
+        name, so matching on the episode number alone avoids downloading a
+        second copy into the same folder.
+        """
+        pattern = re.compile(rf'\.S01E{number:02d}\.(mp4|mkv|ts)$', re.I)
         try:
-            cover_url = self.client.cover_url(album.id) or album.cover_url
-            if cover_url:
-                write_cover(self.client.get_bytes(cover_url), poster)
-        except Exception as exc:
-            LOG.warning('album=%s cover download failed: %s', album.id, exc)
+            for candidate in season_dir.iterdir():
+                if candidate.is_file() and pattern.search(candidate.name):
+                    return candidate
+        except OSError:
+            return None
+        return None
 
     def sync_album(self, album_id: int, category: dict, *,
                    metadata_only: bool = False,
@@ -126,21 +184,34 @@ class Archiver:
             LOG.info('album=%s [%s] 开始同步: 待下载 %d/%d 集', album.id, album.title, len(pending), limit)
         for number in range(1, limit + 1):
             video = season_dir / build_episode_filename(album.title, number)
-            nfo = video.with_suffix('.nfo')
             ep = Episode(album.id, number, f'S01E{number:02d}', album.plot)
             if metadata_only:
-                write_episode_nfo(nfo, album, ep)
+                write_episode_nfo(video.with_suffix('.nfo'), album, ep)
                 continue
             if self.state.episode_done(album.id, number):
-                if not nfo.exists():
-                    write_episode_nfo(nfo, album, ep)
+                # The file was downloaded under an older title, so its name no
+                # longer matches the one derived from the current title; keep
+                # the sidecar next to the video it actually describes.
+                recorded = self._recorded_video_path(album.id, number) or video
+                if not recorded.with_suffix('.nfo').exists():
+                    write_episode_nfo(recorded.with_suffix('.nfo'), album, ep)
                 done += 1
                 continue
-            write_episode_nfo(nfo, album, ep)
-            if video.exists():
+            # A rename on the site must not trigger a re-download of episodes
+            # that are already sitting in this folder under the old name.
+            existing = self._find_episode_video(season_dir, number)
+            if existing is None:
+                write_episode_nfo(video.with_suffix('.nfo'), album, ep)
+                if video.exists():
+                    existing = video
+            if existing is not None:
                 try:
-                    if validate_media(probe_media(video), self.minimum_duration):
-                        self.state.mark_episode(album.id, number, str(video), 'done')
+                    info = probe_media(existing)
+                    if validate_media(info, self.minimum_duration):
+                        self.state.mark_episode(album.id, number, str(existing), 'done',
+                                                info.get('size', 0))
+                        if not existing.with_suffix('.nfo').exists():
+                            write_episode_nfo(existing.with_suffix('.nfo'), album, ep)
                         done += 1
                         continue
                 except Exception:
@@ -157,13 +228,16 @@ class Archiver:
                         continue
             LOG.info('album=%s [%s] 第 %d/%d 集 开始下载...', album.id, album.title, number, limit)
             last = None
+            succeeded = False
             for attempt in range(1, self.retries + 1):
                 try:
                     url = self.client.play_url(album.id, number)
                     info = download_hls(url, video, self.client.base_url + '/',
                                         self.minimum_duration, timeout=self.episode_timeout)
-                    self.state.mark_episode(album.id, number, str(video), 'done')
+                    self.state.mark_episode(album.id, number, str(video), 'done',
+                                            info.get('size', 0))
                     done += 1
+                    succeeded = True
                     size_mb = (info.get('size', 0) or 0) / (1024 * 1024)
                     LOG.info('album=%s [%s] 第 %d/%d 集 下载完成 (时长 %.0f秒, 大小 %.1fMB)',
                              album.id, album.title, number, limit, info.get('duration', 0), size_mb)
@@ -183,11 +257,14 @@ class Archiver:
                         break
                     if attempt < self.retries:
                         time.sleep([5, 15, 30][min(attempt - 1, 2)])
-            else:
+            if not succeeded:
+                # Recorded even for permanent failures so the cooldown applies,
+                # the WebUI shows the episode as failed, and later syncs do not
+                # keep hammering a withdrawn episode.
                 self.state.mark_episode(album.id, number, str(video), 'failed')
                 failed_episodes.append(number)
-                LOG.error('album=%s ep=%s giving up after %s attempts: %s',
-                          album.id, number, self.retries, last)
+                LOG.error('album=%s ep=%s giving up after %s attempt(s): %s',
+                          album.id, number, attempt, last)
         if pending and done == limit and not metadata_only:
             LOG.info('album=%s [%s] 全部 %d 集已下载完毕', album.id, album.title, limit)
         result = {'album': asdict(album), 'directory': str(album_dir),
@@ -235,7 +312,8 @@ def load_config(path: Path) -> dict:
 
 
 def run_daemon(config: dict, schedule: str, web_port: int = 8099) -> int:
-    from .web.app import create_app, set_shared_state
+    from .web.app import (create_app, mark_sync_finished, release_sync,
+                          set_shared_state, try_acquire_sync)
     from .web.log_handler import LogBuffer
     import uvicorn
 
@@ -269,16 +347,19 @@ def run_daemon(config: dict, schedule: str, web_port: int = 8099) -> int:
 
     def sync_loop():
         while True:
-            _sync_status['running'] = True
-            try:
-                archiver.scan()
-                _sync_status['last_sync'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                _sync_status['last_error'] = None
-            except Exception as exc:
-                _sync_status['last_error'] = str(exc)
-                LOG.exception('sync failed')
-            finally:
-                _sync_status['running'] = False
+            # Manual syncs (WebUI) and this loop must never run concurrently:
+            # they would download the same episode into the same .part file.
+            if not try_acquire_sync():
+                LOG.warning('scheduled sync skipped: another sync is already running')
+            else:
+                try:
+                    archiver.scan()
+                    mark_sync_finished()
+                except Exception as exc:
+                    _sync_status['last_error'] = str(exc)
+                    LOG.exception('sync failed')
+                finally:
+                    release_sync()
 
             now = datetime.now()
             target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -312,7 +393,7 @@ def main() -> int:
                         help='扫描媒体目录，将已有视频注册到状态库')
     parser.add_argument('--json', action='store_true')
     parser.add_argument('--daemon', action='store_true',
-                        default=os.environ.get('DAEMON', 'true').lower() in ('1', 'true', 'yes'),
+                        default=os.environ.get('DAEMON', '').lower() in ('1', 'true', 'yes'),
                         help='常驻运行：启动后同步一次，之后每天定时同步，同时开启 WebUI')
     parser.add_argument('--schedule', default=os.environ.get('SCHEDULE', '03:30'),
                         help='--daemon 模式下的每日同步时间 HH:MM')

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import queue
 from contextlib import asynccontextmanager
 from pathlib import Path
+from threading import Lock
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -16,12 +15,38 @@ from .log_handler import LogBuffer
 
 LOG = logging.getLogger('HGXZ')
 
+STATIC_DIR = Path(__file__).parent / 'static'
+
 _state_db: StateDB | None = None
 _log_buffer: LogBuffer | None = None
 _archiver_ref: list = []
 _sync_status: dict = {'running': False, 'last_sync': None, 'last_error': None}
+# Shared by the scheduled loop (cli.run_daemon) and every WebUI trigger so two
+# syncs can never run at once -- they would download the same episode into the
+# same ".part" file.
+_sync_lock = Lock()
 
-STATIC_DIR = Path(__file__).parent / 'static'
+
+def try_acquire_sync() -> bool:
+    """Claim the single sync slot. False means one is already running."""
+    if not _sync_lock.acquire(blocking=False):
+        return False
+    _sync_status['running'] = True
+    _sync_status['last_error'] = None
+    return True
+
+
+def release_sync() -> None:
+    _sync_status['running'] = False
+    try:
+        _sync_lock.release()
+    except RuntimeError:
+        pass
+
+
+def mark_sync_finished() -> None:
+    from datetime import datetime
+    _sync_status['last_sync'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
 def set_shared_state(state: StateDB, log_buf: LogBuffer, archiver_holder: list) -> None:
@@ -70,31 +95,55 @@ def create_app() -> FastAPI:
         result = _state_db.album_with_episodes(album_id)
         if not result:
             return JSONResponse({'error': 'not found'}, 404)
+        result.update(_state_db.episode_stats(album_id))
+        directory = result.get('directory') or ''
+        result['poster_available'] = bool(directory) and (Path(directory) / 'poster.jpg').is_file()
         return result
+
+    @app.get('/api/albums/{album_id}/poster')
+    async def album_poster(album_id: int):
+        """Serve the scraped poster so the library list can show real covers."""
+        if not _state_db:
+            return JSONResponse({'error': 'not ready'}, 503)
+        row = _state_db.album_row(album_id)
+        if not row or not row['directory']:
+            return JSONResponse({'error': 'not found'}, 404)
+        poster = Path(row['directory']) / 'poster.jpg'
+        try:
+            if not poster.is_file() or poster.stat().st_size == 0:
+                return JSONResponse({'error': 'not found'}, 404)
+        except OSError:
+            return JSONResponse({'error': 'not found'}, 404)
+        return FileResponse(poster, media_type='image/jpeg',
+                            headers={'Cache-Control': 'max-age=3600'})
+
+    def _start_background(name: str, work):
+        """Run a blocking job once, refusing to start while another is active."""
+        if not try_acquire_sync():
+            return False
+
+        def _run():
+            try:
+                work()
+                mark_sync_finished()
+            except Exception as exc:
+                _sync_status['last_error'] = str(exc)
+                LOG.exception('%s failed: %s', name, exc)
+            finally:
+                release_sync()
+
+        import threading
+        threading.Thread(target=_run, daemon=True, name=name).start()
+        return True
 
     @app.post('/api/sync')
     async def trigger_sync(album_id: int | None = None):
-        if _sync_status['running']:
-            return JSONResponse({'error': '同步正在进行中'}, 409)
         if not _archiver_ref:
             return JSONResponse({'error': 'not ready'}, 503)
-
-        import threading
-        def _run():
-            _sync_status['running'] = True
-            _sync_status['last_error'] = None
-            try:
-                archiver = _archiver_ref[0]
-                archiver.scan(only_id=album_id)
-                from datetime import datetime
-                _sync_status['last_sync'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            except Exception as exc:
-                _sync_status['last_error'] = str(exc)
-                LOG.exception('manual sync failed: %s', exc)
-            finally:
-                _sync_status['running'] = False
-
-        threading.Thread(target=_run, daemon=True, name='manual-sync').start()
+        archiver = _archiver_ref[0]
+        if not _start_background('manual-sync',
+                                 lambda: archiver.scan(only_id=album_id)):
+            return JSONResponse({'error': '同步正在进行中'}, 409)
         return {'status': 'started', 'album_id': album_id}
 
     @app.post('/api/retry-failed')
@@ -106,37 +155,43 @@ def create_app() -> FastAPI:
 
     @app.post('/api/scan-existing')
     async def scan_existing_api():
-        if _sync_status['running']:
-            return JSONResponse({'error': '同步正在进行中'}, 409)
         if not _archiver_ref:
             return JSONResponse({'error': 'not ready'}, 503)
+        archiver = _archiver_ref[0]
 
-        import threading
-        def _run():
-            _sync_status['running'] = True
-            _sync_status['last_error'] = None
-            try:
-                from ..scanner import scan_existing
-                from datetime import datetime
-                archiver = _archiver_ref[0]
-                result = scan_existing(archiver.root, archiver.state,
-                                       archiver.minimum_duration)
-                LOG.info('scan existing result: %s', result)
-                _sync_status['last_sync'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            except Exception as exc:
-                _sync_status['last_error'] = str(exc)
-                LOG.exception('scan existing failed: %s', exc)
-            finally:
-                _sync_status['running'] = False
+        def work():
+            from ..scanner import scan_existing
+            result = scan_existing(archiver.root, archiver.state,
+                                   archiver.minimum_duration)
+            LOG.info('scan existing result: %s', result)
 
-        threading.Thread(target=_run, daemon=True, name='scan-existing').start()
+        if not _start_background('scan-existing', work):
+            return JSONResponse({'error': '同步正在进行中'}, 409)
         return {'status': 'started'}
 
     @app.get('/api/logs')
-    async def get_logs(n: int = Query(200, le=2000)):
+    async def get_logs(n: int = Query(200, ge=1, le=2000)):
         if not _log_buffer:
             return []
         return _log_buffer.recent(n)
+
+    @app.get('/api/settings')
+    async def settings():
+        """Read-only runtime settings for the WebUI footer/settings panel."""
+        if not _archiver_ref:
+            return JSONResponse({'error': 'not ready'}, 503)
+        archiver = _archiver_ref[0]
+        return {
+            'base_url': archiver.client.base_url,
+            'base_urls': archiver.client.base_urls,
+            'media_root': str(archiver.root),
+            'categories': [c['name'] for c in archiver.config['site']['categories']],
+            'retries': archiver.retries,
+            'minimum_duration': archiver.minimum_duration,
+            'recheck_days': archiver.recheck_days,
+            'failure_cooldown_hours': archiver.failure_cooldown_hours,
+            'episode_timeout': archiver.episode_timeout,
+        }
 
     @app.get('/api/sync-status')
     async def sync_status():
@@ -148,21 +203,26 @@ def create_app() -> FastAPI:
             await websocket.close(code=1011)
             return
         await websocket.accept()
-        sub = _log_buffer.subscribe()
+        loop, q = _log_buffer.subscribe()
+        # Push whatever is already buffered so a fresh page is not blank until
+        # the next log line happens to arrive.
+        for entry in _log_buffer.recent(200):
+            await websocket.send_json(entry)
         try:
             while True:
                 try:
-                    entry = await asyncio.get_event_loop().run_in_executor(
-                        None, lambda: sub.get(timeout=1.0))
-                    await websocket.send_json(entry)
-                except queue.Empty:
-                    try:
-                        await asyncio.wait_for(websocket.receive_text(), timeout=0.01)
-                    except (asyncio.TimeoutError, WebSocketDisconnect):
-                        pass
-        except (WebSocketDisconnect, Exception):
+                    entry = await asyncio.wait_for(q.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    # Keepalive: the client reconnects if this ever fails.
+                    await websocket.send_json({'level': 'PING', 'message': '',
+                                               'timestamp': 0, 'keepalive': True})
+                    continue
+                await websocket.send_json(entry)
+        except (WebSocketDisconnect, asyncio.CancelledError):
             pass
+        except Exception:
+            LOG.debug('log websocket closed unexpectedly', exc_info=True)
         finally:
-            _log_buffer.unsubscribe(sub)
+            _log_buffer.unsubscribe(loop, q)
 
     return app
